@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.Python
+.venv/
+venv/
+.python-version
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# ML / experiment outputs
+mlruns/
+models/
+!models/.gitkeep
+artifacts/
+dist/
+.dvc/cache/
+.dvc/tmp/
+.dvc/config.local
+
+# Data and caches
+*.csv
+*.parquet
+*.pkl
+*.joblib
+.ipynb_checkpoints/
+.coverage
+.pytest_cache/
+.ruff_cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docs
+site/
+
+# Logs
+logs/
