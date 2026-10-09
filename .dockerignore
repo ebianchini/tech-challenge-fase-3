@@ -1,0 +1,28 @@
+# VCS
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+.venv/
+venv/
+
+# Tests and tooling
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+coverage/
+htmlcov/
+
+# Project artifacts
+.dvc/
+mlruns/
+*.pkl
+models/reports/
+data/processed/online_shoppers_processed.npz
+
+# Local env
+.env
+.env.*
