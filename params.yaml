@@ -1,0 +1,9 @@
+train:
+  random_state: 42
+  test_size: 0.2
+  temporal_split: false
+  min_df: 1
+  max_features: null
+  max_iter: 1000
+  min_macro_f1: 0.60
+  min_urgent_recall: 0.90

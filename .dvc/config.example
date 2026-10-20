@@ -1,0 +1,5 @@
+[core]
+    remote = default
+
+['remote "default"']
+    url = s3://private-bucket/triage-dvc
