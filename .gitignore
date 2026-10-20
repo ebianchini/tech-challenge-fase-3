@@ -21,6 +21,7 @@ artifacts/
 dist/
 .dvc/cache/
 .dvc/tmp/
+.dvc/config
 .dvc/config.local
 
 # Data and caches

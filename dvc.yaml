@@ -1,0 +1,25 @@
+stages:
+  normalize:
+    cmd: uv run python -m triage.training.prepare --data data/raw/medical_abstracts.csv --output data/interim/medical_abstracts_normalized.csv
+    deps:
+      - data/raw/medical_abstracts.csv
+      - src/triage/training/dataset.py
+      - src/triage/training/prepare.py
+    outs:
+      - data/interim/medical_abstracts_normalized.csv
+  train:
+    cmd: uv run train --data data/interim/medical_abstracts_normalized.csv --output-dir models/training --params-file params.yaml
+    deps:
+      - data/interim/medical_abstracts_normalized.csv
+      - src/triage/training/dataset.py
+      - src/triage/training/evaluation.py
+      - src/triage/training/pipeline.py
+      - src/triage/training/train.py
+    params:
+      - train
+    outs:
+      - models/training/pipeline.joblib
+      - models/training/model.joblib
+      - models/training/preprocessor.joblib
+      - models/training/split.json
+      - models/training/metadata.json

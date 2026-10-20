@@ -49,6 +49,37 @@ docker run --rm -p 8000:8000 triage-laudos:dev
 
 Endpoints: `GET /health/live`, `GET /health/ready` e `POST /v1/triage`.
 
+## Pipeline de dados, modelo e DVC
+
+O pipeline offline esta em [`src/triage/training/`](src/triage/training). O adaptador aceita
+`text`/`abstract`/`report_text` e preserva o rótulo original em `label_original`; ele nunca
+converte classes temáticas em urgência. O treino técnico é executado com:
+
+```powershell
+uv run train --data data/raw/medical_abstracts.csv --output-dir models/training
+```
+
+O modelo é `TfidfVectorizer -> LogisticRegression`, com o vocabulário ajustado somente no
+conjunto de treino. São persistidos o pipeline completo, componentes compatíveis, split,
+fingerprint, parâmetros, métricas por classe, matriz de confusão e erro de calibração.
+`--clinical` exige uma coluna `urgency_label` e `--clinical-approval`; sem ambos o treino
+clínico falha explicitamente.
+
+O fluxo DVC em [`dvc.yaml`](dvc.yaml) normaliza o CSV e treina usando [`params.yaml`](params.yaml):
+
+```powershell
+$env:DVC_REMOTE_URL = "s3://bucket-privado/triage-dvc"
+dvc remote add --local -d default $env:DVC_REMOTE_URL
+dvc repro
+dvc pull
+dvc push
+```
+
+Configure permissões por identidade (por exemplo, OIDC/role na CI ou perfil local), nunca
+credenciais no repositório. O arquivo [`.dvc/config.example`](.dvc/config.example) mostra o
+formato; o remote efetivo deve ser gravado somente na configuração local (`--local`). O corpus
+precisa ser fornecido por `dvc pull` ou colocado em `data/raw/medical_abstracts.csv`.
+
 ## Proximos bloqueios
 
 Antes de qualquer uso hospitalar, ainda sao necessarios governanca clinica, dataset rotulado por
