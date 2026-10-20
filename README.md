@@ -80,6 +80,20 @@ credenciais no repositório. O arquivo [`.dvc/config.example`](.dvc/config.examp
 formato; o remote efetivo deve ser gravado somente na configuração local (`--local`). O corpus
 precisa ser fornecido por `dvc pull` ou colocado em `data/raw/medical_abstracts.csv`.
 
+## Airflow
+
+A DAG [`dags/triage_retrain.py`](dags/triage_retrain.py) executa, em ordem,
+`load_data`, `validate_data`, `prepare_splits`, `train_model`, `evaluate_model`, `export_onnx`,
+`benchmark_latency` e `register_if_approved`. As tasks trocam somente manifestos e artefatos em
+`TRIAGE_RUN_ROOT`; datasets e modelos não são enviados por XCom (`do_xcom_push=False`).
+
+Instale as dependências da DAG com `uv sync --extra airflow` e aponte o Airflow para `dags/`.
+O agendamento é manual por padrão; `TRIAGE_RETRAIN_SCHEDULE`, `TRIAGE_TASK_RETRIES`,
+`TRIAGE_TASK_TIMEOUT_MINUTES`, `TRIAGE_DATA_PATH`, `TRIAGE_RUN_ROOT` e `TRIAGE_REGISTRY_ROOT`
+permitem parametrizar o ambiente. O registro usa o fingerprint do artefato como diretório
+imutável e só ocorre após o quality gate. Para modelo clínico, também exige
+`TRIAGE_CLINICAL_APPROVAL=approved`.
+
 ## Proximos bloqueios
 
 Antes de qualquer uso hospitalar, ainda sao necessarios governanca clinica, dataset rotulado por
