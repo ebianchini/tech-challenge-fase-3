@@ -1,0 +1,85 @@
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: docker/airflow/Dockerfile
+  environment: &airflow-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "False"
+    AIRFLOW__CORE__STORE_SERIALIZED_DAGS: "True"
+    AIRFLOW__CORE__STORE_DAG_CODE: "True"
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "False"
+    PYTHONPATH: /opt/airflow:/opt/airflow/src
+    TRIAGE_PROJECT_ROOT: /opt/airflow
+    TRIAGE_DATA_PATH: /opt/airflow/data/raw/medical_abstracts.csv
+    TRIAGE_RUN_ROOT: /opt/airflow/artifacts/retraining
+    TRIAGE_REGISTRY_ROOT: /opt/airflow/models/registry
+    TRIAGE_PARAMS_PATH: /opt/airflow/params.yaml
+    TRIAGE_RETRAIN_SCHEDULE: "0 0 * * *"
+    TRIAGE_TASK_TIMEOUT_MINUTES: "30"
+    TRIAGE_TASK_RETRIES: "2"
+    TRIAGE_CLINICAL_APPROVAL: approved
+  volumes:
+    - .:/opt/airflow
+    - ./dags:/opt/airflow/dags
+    - ./src:/opt/airflow/src
+    - ./data:/opt/airflow/data
+    - ./models:/opt/airflow/models
+    - ./reports:/opt/airflow/reports
+    - ./artifacts:/opt/airflow/artifacts
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  airflow-init:
+    <<: *airflow-common
+    image: triage-airflow:local
+    command: >
+      bash -lc "airflow db init && airflow users create --username admin --firstname Infra --lastname Ops --role Admin --email admin@example.com --password admin || true"
+    restart: "no"
+
+  airflow-scheduler:
+    <<: *airflow-common
+    image: triage-airflow:local
+    command: airflow scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  airflow-webserver:
+    <<: *airflow-common
+    image: triage-airflow:local
+    command: airflow webserver
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  postgres-db-volume:
