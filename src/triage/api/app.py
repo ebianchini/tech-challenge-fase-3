@@ -9,12 +9,13 @@ from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from triage.domain.exceptions import InferenceError
 from triage.domain.models import TriageClass, TriageRequest
 from triage.domain.service import TriageService
+from triage.infrastructure.metrics import HTTPMetricsMiddleware, TriageMetrics
 from triage.infrastructure.model_loader import ModelLoadError, SklearnPredictor
 
 CONTRACT_VERSION = "1.0"
@@ -87,23 +88,47 @@ def validation_details(exc: RequestValidationError) -> list[dict[str, object]]:
     ]
 
 
+class _InstrumentedFastAPI(FastAPI):
+    def build_middleware_stack(self):
+        # Include ServerErrorMiddleware's response in the HTTP observation too.
+        return HTTPMetricsMiddleware(
+            super().build_middleware_stack(),
+            metrics=self.state.metrics,
+            route_templates={route.path for route in self.routes},
+        )
+
+
 def create_app() -> FastAPI:
     state: dict[str, object] = {"predictor": None, "load_error": None}
+    metrics = TriageMetrics()
+    metric_model_version = metrics.begin_model(None)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        nonlocal metric_model_version
+        state.update(predictor=None, load_error=None)
+        metric_model_version = metrics.begin_model(None)
         try:
-            state["predictor"] = SklearnPredictor(MODEL_PATH, PREPROCESSOR_PATH)
+            predictor = SklearnPredictor(MODEL_PATH, PREPROCESSOR_PATH)
+            state["predictor"] = predictor
         except ModelLoadError as exc:
             state["load_error"] = exc
-        yield
+        else:
+            metric_model_version = metrics.begin_model(predictor.model_version)
+            metrics.set_model_ready(metric_model_version, True)
+        try:
+            yield
+        finally:
+            metrics.set_model_ready(metric_model_version, False)
+            state["predictor"] = None
 
-    app = FastAPI(
+    app = _InstrumentedFastAPI(
         title="Triage de Laudos API",
         version="0.1.0",
         description="API tecnica de triagem, sem decisao clinica autonoma.",
         lifespan=lifespan,
     )
+    app.state.metrics = metrics
 
     @app.middleware("http")
     async def request_metadata(request: Request, call_next):
@@ -116,20 +141,24 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(RequestValidationError)
     async def validation_handler(_request: Request, exc: RequestValidationError):
+        metrics.observe_error("INVALID_INPUT_SCHEMA")
         return error_response(
             "INVALID_INPUT_SCHEMA", "Payload de triagem invalido.", 422, validation_details(exc)
         )
 
     @app.exception_handler(ModelLoadError)
     async def model_handler(_request: Request, _exc: ModelLoadError):
+        metrics.observe_error("MODEL_UNAVAILABLE")
         return error_response("MODEL_UNAVAILABLE", "Modelo de inferencia indisponivel.", 503)
 
     @app.exception_handler(InferenceError)
     async def inference_handler(_request: Request, _exc: InferenceError):
+        metrics.observe_error("INFERENCE_FAILED")
         return error_response("INFERENCE_FAILED", "Falha durante a inferencia.", 500)
 
     @app.exception_handler(Exception)
     async def unexpected_handler(_request: Request, _exc: Exception):
+        metrics.observe_error("INFERENCE_FAILED")
         return error_response("INFERENCE_FAILED", "Falha durante a inferencia.", 500)
 
     @app.get("/health/live")
@@ -147,6 +176,20 @@ def create_app() -> FastAPI:
             preprocessor_loaded=preprocessor_loaded,
         )
 
+    @app.get(
+        "/metrics",
+        response_class=Response,
+        responses={
+            200: {
+                "description": "Metricas tecnicas no formato Prometheus, sem texto de laudos.",
+                "content": {"text/plain": {"schema": {"type": "string"}}},
+            }
+        },
+    )
+    def prometheus_metrics() -> Response:
+        content, content_type = metrics.render()
+        return Response(content=content, headers={"Content-Type": content_type})
+
     @app.post(
         "/v1/triage",
         responses={
@@ -161,8 +204,14 @@ def create_app() -> FastAPI:
             raise ModelLoadError("Modelo de inferencia indisponivel.")
         service = TriageService(predictor)  # type: ignore[arg-type]
         request_id = payload.request_id or str(uuid4())
-        predictions = service.classify([item.report_text.strip() for item in payload.instances])
-        return TriageBatchResponse(
+        texts = [item.report_text.strip() for item in payload.instances]
+        metrics.observe_inputs(len(text) for text in texts)
+        started = time.perf_counter()
+        try:
+            predictions = service.classify(texts)
+        finally:
+            metrics.observe_inference(metric_model_version, time.perf_counter() - started)
+        response = TriageBatchResponse(
             contract_version=payload.contract_version,
             request_id=request_id,
             model_version=predictor.model_version,  # type: ignore[union-attr]
@@ -171,6 +220,8 @@ def create_app() -> FastAPI:
                 for prediction in predictions
             ],
         )
+        metrics.observe_predictions(metric_model_version, predictions)
+        return response
 
     return app
 

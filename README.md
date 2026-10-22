@@ -3,7 +3,8 @@
 Projeto iniciado conforme o SDD de apoio. Esta entrega cobre a fundacao das Etapas 0 e 1: governanca
 documentada, API FastAPI, contrato versionado, carregamento singleton no startup, health checks,
 abstencao tecnica, container multi-stage e testes do dominio e da API. A Etapa 2 inclui o pipeline
-offline, DVC, DAG Airflow e as configuracoes de CI e CD descritas abaixo.
+offline, DVC, DAG Airflow e as configuracoes de CI e CD descritas abaixo. O item Prometheus da
+Etapa 3 adiciona instrumentacao da API e exposicao de metricas em `GET /metrics`.
 
 O artefato atual e uma demonstracao tecnica treinada com texto sintetico. O Medical Abstracts TC
 Corpus nao possui, por si so, labels de urgencia clinica. Nenhum resultado atual deve ser interpretado
@@ -18,7 +19,7 @@ uv sync --locked --extra dev --extra airflow --python 3.12
 uv run --no-sync python scripts/create_demo_model.py
 uv run --no-sync python scripts/benchmark_baseline.py
 uv run --no-sync pytest -q tests
-uv run --no-sync uvicorn triage.api.app:app --host 0.0.0.0 --port 8000
+uv run --no-sync uvicorn triage.api.app:app --host 0.0.0.0 --port 8000 --workers 1
 ```
 
 A API fica em `http://localhost:8000`. O contrato completo esta em
@@ -48,7 +49,7 @@ docker run --rm -p 8000:8000 triage-laudos:dev
 ./scripts/docker_smoke.ps1
 ```
 
-Endpoints: `GET /health/live`, `GET /health/ready` e `POST /v1/triage`.
+Endpoints: `GET /health/live`, `GET /health/ready`, `POST /v1/triage` e `GET /metrics`.
 
 ## Pipeline de dados, modelo e DVC
 
@@ -126,8 +127,23 @@ parametrizaveis estao em [`infra/aws/`](infra/aws/). Build e deploy reais ainda 
 com Docker e com uma conta AWS configurada. A entrega local valida a automacao com testes HTTP e
 simulacoes das respostas AWS, sem provisionar recursos.
 
+## Metricas Prometheus
+
+A API expoe `GET /metrics` no formato Prometheus. A instrumentacao registra requisicoes e latencia
+HTTP, latencia de inferencia, predicoes por classe, erros por tipo seguro, abstencoes, readiness e
+tamanho dos textos em caracteres. Os textos, identificadores de requisicao e caminhos desconhecidos
+nao sao usados como labels. As consultas a `/metrics` nao alimentam as estatisticas HTTP.
+
+Use um unico worker por container: o registro de metricas e isolado por instancia da aplicacao e
+esta entrega nao agrega multiplos processos. O endpoint nao possui autenticacao na aplicacao;
+restrinja seu acesso a rede de observabilidade e nao o inclua nas rotas publicas do gateway.
+
+Consulte [docs/metrics.md](docs/metrics.md) para unidades, contagem de lotes, labels, limites e
+comandos de verificacao. Configurar o servidor Prometheus local, regras de alerta, Grafana e Compose
+corresponde aos proximos itens da Etapa 3.
+
 ## Proximos bloqueios
 
 Antes de qualquer uso hospitalar, ainda sao necessarios governanca clinica, dataset rotulado por
 especialistas, desidentificacao aprovada, protecao de branch com CI obrigatoria, configuracao e
-validacao do deploy AWS, observabilidade Prometheus/Grafana e comparacao de inferencia ONNX.
+validacao do deploy AWS, coleta Prometheus, alertas, Grafana e comparacao de inferencia ONNX.

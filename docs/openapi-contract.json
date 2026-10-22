@@ -46,6 +46,24 @@
         }
       }
     },
+    "/metrics": {
+      "get": {
+        "summary": "Prometheus Metrics",
+        "operationId": "prometheus_metrics_metrics_get",
+        "responses": {
+          "200": {
+            "description": "Metricas tecnicas no formato Prometheus, sem texto de laudos.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/triage": {
       "post": {
         "summary": "Triage",
