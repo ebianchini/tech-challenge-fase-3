@@ -4,7 +4,8 @@ Projeto iniciado conforme o SDD de apoio. Esta entrega cobre a fundacao das Etap
 documentada, API FastAPI, contrato versionado, carregamento singleton no startup, health checks,
 abstencao tecnica, container multi-stage e testes do dominio e da API. A Etapa 2 inclui o pipeline
 offline, DVC, DAG Airflow e as configuracoes de CI e CD descritas abaixo. O item Prometheus da
-Etapa 3 adiciona instrumentacao da API e exposicao de metricas em `GET /metrics`.
+Etapa 3 adiciona instrumentacao da API, exposicao de metricas em `GET /metrics` e servidor
+Prometheus local com coleta, alertas e retencao.
 
 O artefato atual e uma demonstracao tecnica treinada com texto sintetico. O Medical Abstracts TC
 Corpus nao possui, por si so, labels de urgencia clinica. Nenhum resultado atual deve ser interpretado
@@ -50,6 +51,21 @@ docker run --rm -p 8000:8000 triage-laudos:dev
 ```
 
 Endpoints: `GET /health/live`, `GET /health/ready`, `POST /v1/triage` e `GET /metrics`.
+
+Para executar a API com Prometheus local, gere o modelo sintetico antes do build:
+
+```powershell
+uv sync --locked --extra dev
+uv run --no-sync python scripts/create_demo_model.py
+docker compose up -d --build api prometheus
+```
+
+Esse comando inicia somente esses dois servicos, sem Airflow. A API fica em
+`http://127.0.0.1:8000` e o Prometheus em `http://127.0.0.1:9090`. A coleta usa a rede bridge dedicada
+`observability`; as portas do host escutam somente em loopback. O historico e persistido no volume
+`prometheus-data`, com retencao de 7 dias ou 1 GB, conforme o primeiro limite atingido. Reserve
+pelo menos 2 GB para o volume; o limite da TSDB nao e uma quota rigida de disco. Instrucoes de
+verificacao, alertas e operacao estao em [docs/prometheus-local.md](docs/prometheus-local.md).
 
 ## Pipeline de dados, modelo e DVC
 
@@ -100,7 +116,8 @@ imutável e só ocorre após o quality gate. Para modelo clínico, também exige
 
 O workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) executa em todo push e pull request,
 com Python 3.12 e dependencias de `uv.lock`. Os jobs verificam Ruff, Pytest com cobertura, sintaxe e
-carregamento da DAG pelo Airflow real, e contrato OpenAPI contra um baseline versionado. O gate
+carregamento da DAG pelo Airflow real, contrato OpenAPI contra um baseline versionado e configuracao
+do Compose/Prometheus com testes das regras de alerta. O gate
 final **`CI required`** exige sucesso de todas essas verificacoes.
 
 A CI usa somente fixtures e modelos sinteticos, sem baixar datasets ou publicar modelos. Os uploads
@@ -138,12 +155,13 @@ Use um unico worker por container: o registro de metricas e isolado por instanci
 esta entrega nao agrega multiplos processos. O endpoint nao possui autenticacao na aplicacao;
 restrinja seu acesso a rede de observabilidade e nao o inclua nas rotas publicas do gateway.
 
-Consulte [docs/metrics.md](docs/metrics.md) para unidades, contagem de lotes, labels, limites e
-comandos de verificacao. Configurar o servidor Prometheus local, regras de alerta, Grafana e Compose
-corresponde aos proximos itens da Etapa 3.
+Consulte [docs/metrics.md](docs/metrics.md) para unidades, contagem de lotes, labels e limites; veja
+[docs/prometheus-local.md](docs/prometheus-local.md) para coleta, alertas, retencao e verificacao
+do servidor local. Os alertas ficam na UI/API do Prometheus, sem envio de notificacoes. Grafana e
+seu provisionamento permanecem nos proximos itens da Etapa 3.
 
 ## Proximos bloqueios
 
 Antes de qualquer uso hospitalar, ainda sao necessarios governanca clinica, dataset rotulado por
 especialistas, desidentificacao aprovada, protecao de branch com CI obrigatoria, configuracao e
-validacao do deploy AWS, coleta Prometheus, alertas, Grafana e comparacao de inferencia ONNX.
+validacao do deploy AWS, validacao da stack local em Docker, Grafana e comparacao de inferencia ONNX.

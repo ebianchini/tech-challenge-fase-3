@@ -122,10 +122,33 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  monitoring:
+    name: Prometheus configuration and alerts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
+      - name: Validate Prometheus configuration and rules
+        run: >-
+          docker run --rm --entrypoint /bin/promtool
+          --mount type=bind,source="${{ github.workspace }}/monitoring/prometheus",target=/etc/prometheus,readonly
+          --workdir /etc/prometheus prom/prometheus:v3.13.3
+          check config prometheus.yml
+      - name: Test alert behavior
+        run: >-
+          docker run --rm --entrypoint /bin/promtool
+          --mount type=bind,source="${{ github.workspace }}/monitoring/prometheus",target=/etc/prometheus,readonly
+          --workdir /etc/prometheus prom/prometheus:v3.13.3
+          test rules alerts.test.yml
+
   required:
     name: CI required
     if: ${{ always() }}
-    needs: [lint, tests, dag, openapi]
+    needs: [lint, tests, dag, openapi, monitoring]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
@@ -133,10 +156,11 @@ jobs:
       TESTS_RESULT: ${{ needs.tests.result }}
       DAG_RESULT: ${{ needs.dag.result }}
       OPENAPI_RESULT: ${{ needs.openapi.result }}
+      MONITORING_RESULT: ${{ needs.monitoring.result }}
     steps:
       - name: Require all checks to succeed
         run: |
-          for result in "$LINT_RESULT" "$TESTS_RESULT" "$DAG_RESULT" "$OPENAPI_RESULT"; do
+          for result in "$LINT_RESULT" "$TESTS_RESULT" "$DAG_RESULT" "$OPENAPI_RESULT" "$MONITORING_RESULT"; do
             if [ "$result" != "success" ]; then
               echo "CI failed: a required job failed, was cancelled, or was skipped."
               exit 1

@@ -1,8 +1,9 @@
-# Integracao continua da Etapa 2
+# Integracao continua
 
 O workflow [ci.yml](../.github/workflows/ci.yml) esta configurado para todo `push` e
-`pull_request`, sem filtro de caminhos. Os jobs usam Ubuntu 24.04, Python 3.12 e `uv` 0.13.4.
-As dependencias sao resolvidas pelo [uv.lock](../uv.lock) com `uv sync --locked`; as actions
+`pull_request`, sem filtro de caminhos. Os jobs usam Ubuntu 24.04; as verificacoes Python usam
+Python 3.12 e `uv` 0.13.4. As dependencias sao resolvidas pelo [uv.lock](../uv.lock) com
+`uv sync --locked`; as actions
 utilizadas estao fixadas por SHA de commit. O token do workflow tem somente leitura do conteudo
 do repositorio.
 
@@ -14,7 +15,8 @@ do repositorio.
 | `tests` | Geracao do modelo sintetico e Pytest com cobertura e relatorio JUnit; inclui os testes de Airflow com as dependencias reais instaladas. |
 | `dag` | Compilacao dos arquivos Python, importacao pelo `DagBag` real do Airflow e verificacao da estrutura de `triage_retrain`, sem executar tasks. |
 | `openapi` | Validacao formal da especificacao e comparacao dos contratos existentes com o baseline [openapi-contract.json](openapi-contract.json). |
-| `CI required` | Gate final: exige sucesso de `lint`, `tests`, `dag` e `openapi`; falha se algum desses jobs falhar, for cancelado ou pulado. |
+| `monitoring` | Validacao do Compose, configuracao Prometheus e cenarios sinteticos das regras com o `promtool` da imagem `prom/prometheus:v3.13.3`. |
+| `CI required` | Gate final: exige sucesso de `lint`, `tests`, `dag`, `openapi` e `monitoring`; falha se algum desses jobs falhar, for cancelado ou pulado. |
 
 O nome literal do status obrigatorio e **`CI required`**. Mantenha esse nome estavel ao editar
 o workflow, pois ele deve ser referenciado na protecao da branch. O gate usa os resultados dos
@@ -41,6 +43,19 @@ completo preparado pelo primeiro comando.
 Os jobs `lint` e `openapi` precisam somente de `uv sync --locked --extra dev`; podem ser
 reproduzidos em Windows com Python suportado. Os jobs `tests` e `dag` usam ambos os extras
 no runner Linux. O modelo sintetico precisa ser gerado antes de executar a suite de testes.
+
+O job `monitoring` usa Docker/Compose e o `promtool` da imagem fixada, sem executar a API,
+Airflow ou coleta de dados. Reproduza a partir da raiz do repositorio:
+
+```powershell
+docker compose config --quiet
+docker compose run --rm --no-deps --entrypoint /bin/promtool prometheus check config /etc/prometheus/prometheus.yml
+docker compose run --rm --no-deps --entrypoint /bin/promtool prometheus test rules /etc/prometheus/alerts.test.yml
+```
+
+Os cenarios verificam disparo e recuperacao, limites, periodos `for`, falta de trafego,
+readiness e isolamento por alvo/versao de modelo. A verificacao integrada da stack esta em
+[prometheus-local.md](prometheus-local.md).
 
 ## Validacao local inicial da CI
 
@@ -104,7 +119,7 @@ administracao/manutencao do repositorio; um administrador precisa aplicar a regr
 
 Depois de publicar a alteracao no GitHub:
 
-1. Em **Actions > CI**, abra a execucao do commit publicado. Confira sucesso dos quatro jobs
+1. Em **Actions > CI**, abra a execucao do commit publicado. Confira sucesso dos cinco jobs
    e de **CI required**; registre o link dessa execucao como evidencia.
 2. Com permissao de administrar regras, abra **Settings > Branches > Add classic branch
    protection rule** (ou edite a regra existente de `main`).

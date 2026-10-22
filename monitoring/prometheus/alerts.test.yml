@@ -1,0 +1,348 @@
+# Run from the repository root: promtool test rules monitoring/prometheus/alerts.test.yml
+# Fixtures are synthetic counter/gauge samples, not clinical data.
+rule_files:
+  - alerts.yml
+evaluation_interval: 15s
+
+tests:
+  - name: HTTP 5xx respects for, ignores health traffic, isolates targets and recovers
+    interval: 15s
+    input_series:
+      - series: 'triage_http_requests_total{job="triage-api",instance="api:8000",method="POST",route="/v1/triage",status="200"}'
+        values: '0+90x24 2260+100x24'
+      - series: 'triage_http_requests_total{job="triage-api",instance="api:8000",method="POST",route="/v1/triage",status="500"}'
+        values: '0+10x24 240x24'
+      - series: 'triage_http_requests_total{job="triage-api",instance="api:8000",method="GET",route="/health/ready",status="200"}'
+        values: '0+10000x49'
+      - series: 'triage_http_requests_total{job="triage-api",instance="healthy:8000",method="POST",route="/v1/triage",status="200"}'
+        values: '0+10000x49'
+      - series: 'triage_http_requests_total{job="other",instance="api:8000",method="POST",route="/v1/triage",status="200"}'
+        values: '0+10000x49'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: TriageAPIHighErrorRate
+        exp_alerts: []
+      - eval_time: 2m15s
+        alertname: TriageAPIHighErrorRate
+        exp_alerts:
+          - &high_error
+            exp_labels:
+              job: triage-api
+              instance: api:8000
+              severity: warning
+            exp_annotations:
+              summary: Taxa de erros HTTP 5xx da triagem acima de 5%
+              description: "api:8000: mais de 5% de respostas 5xx em POST /v1/triage na janela de 5m, por 2m. Verifique a API e o modelo."
+      - eval_time: 6m
+        alertname: TriageAPIHighErrorRate
+        exp_alerts:
+          - *high_error
+      - eval_time: 12m
+        alertname: TriageAPIHighErrorRate
+        exp_alerts: []
+
+  - name: Client errors, health failures, other methods and other jobs are not triage 5xx
+    interval: 15s
+    input_series:
+      - series: 'triage_http_requests_total{job="triage-api",instance="api:8000",method="POST",route="/v1/triage",status="200"}'
+        values: '0+10x40'
+      - series: 'triage_http_requests_total{job="triage-api",instance="api:8000",method="POST",route="/v1/triage",status="422"}'
+        values: '0+90x40'
+      - series: 'triage_http_requests_total{job="triage-api",instance="api:8000",method="GET",route="/health/ready",status="503"}'
+        values: '0+10000x40'
+      - series: 'triage_http_requests_total{job="triage-api",instance="api:8000",method="GET",route="/health/live",status="500"}'
+        values: '0+10000x40'
+      - series: 'triage_http_requests_total{job="triage-api",instance="api:8000",method="GET",route="/v1/triage",status="500"}'
+        values: '0+10000x40'
+      - series: 'triage_http_requests_total{job="triage-api",instance="api:8000",method="POST",route="unmatched",status="500"}'
+        values: '0+10000x40'
+      - series: 'triage_http_requests_total{job="other",instance="api:8000",method="POST",route="/v1/triage",status="500"}'
+        values: '0+10000x40'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: TriageAPIHighErrorRate
+        exp_alerts: []
+
+  - name: HTTP p95 respects for, isolates targets from fast health traffic and recovers
+    interval: 15s
+    input_series:
+      - series: 'triage_http_request_duration_seconds_bucket{job="triage-api",instance="api:8000",method="POST",route="/v1/triage",le="0.1"}'
+        values: '0x24 100+100x24'
+      - series: 'triage_http_request_duration_seconds_bucket{job="triage-api",instance="api:8000",method="POST",route="/v1/triage",le="0.25"}'
+        values: '0+100x49'
+      - series: 'triage_http_request_duration_seconds_bucket{job="triage-api",instance="api:8000",method="POST",route="/v1/triage",le="+Inf"}'
+        values: '0+100x49'
+      - series: 'triage_http_request_duration_seconds_count{job="triage-api",instance="api:8000",method="POST",route="/v1/triage"}'
+        values: '0+100x49'
+      - series: 'triage_http_request_duration_seconds_bucket{job="triage-api",instance="api:8000",method="GET",route="/health/ready",le="0.1"}'
+        values: '0+10000x49'
+      - series: 'triage_http_request_duration_seconds_bucket{job="triage-api",instance="api:8000",method="GET",route="/health/ready",le="+Inf"}'
+        values: '0+10000x49'
+      - series: 'triage_http_request_duration_seconds_bucket{job="triage-api",instance="healthy:8000",method="POST",route="/v1/triage",le="0.1"}'
+        values: '0+10000x49'
+      - series: 'triage_http_request_duration_seconds_bucket{job="triage-api",instance="healthy:8000",method="POST",route="/v1/triage",le="+Inf"}'
+        values: '0+10000x49'
+      - series: 'triage_http_request_duration_seconds_count{job="triage-api",instance="healthy:8000",method="POST",route="/v1/triage"}'
+        values: '0+10000x49'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: TriageAPIHighLatency
+        exp_alerts: []
+      - eval_time: 2m15s
+        alertname: TriageAPIHighLatency
+        exp_alerts:
+          - &high_latency
+            exp_labels:
+              job: triage-api
+              instance: api:8000
+              severity: warning
+            exp_annotations:
+              summary: Latencia HTTP p95 da triagem acima de 100 ms
+              description: "api:8000: p95 de POST /v1/triage acima de 0.1s na janela de 5m, por 2m. Verifique carga e latencia de inferencia."
+      - eval_time: 6m
+        alertname: TriageAPIHighLatency
+        exp_alerts:
+          - *high_latency
+      - eval_time: 12m
+        alertname: TriageAPIHighLatency
+        exp_alerts: []
+
+  - name: Slow health, other methods and other jobs cannot cause triage latency alerts
+    interval: 15s
+    input_series:
+      - series: 'triage_http_request_duration_seconds_bucket{job="triage-api",instance="api:8000",method="POST",route="/v1/triage",le="0.1"}'
+        values: '0+100x40'
+      - series: 'triage_http_request_duration_seconds_bucket{job="triage-api",instance="api:8000",method="POST",route="/v1/triage",le="+Inf"}'
+        values: '0+100x40'
+      - series: 'triage_http_request_duration_seconds_count{job="triage-api",instance="api:8000",method="POST",route="/v1/triage"}'
+        values: '0+100x40'
+      - series: 'triage_http_request_duration_seconds_bucket{job="triage-api",instance="api:8000",method="GET",route="/health/ready",le="0.1"}'
+        values: '0x40'
+      - series: 'triage_http_request_duration_seconds_bucket{job="triage-api",instance="api:8000",method="GET",route="/health/ready",le="0.25"}'
+        values: '0+10000x40'
+      - series: 'triage_http_request_duration_seconds_bucket{job="triage-api",instance="api:8000",method="GET",route="/health/ready",le="+Inf"}'
+        values: '0+10000x40'
+      - series: 'triage_http_request_duration_seconds_bucket{job="triage-api",instance="api:8000",method="GET",route="/v1/triage",le="0.1"}'
+        values: '0x40'
+      - series: 'triage_http_request_duration_seconds_bucket{job="triage-api",instance="api:8000",method="GET",route="/v1/triage",le="0.25"}'
+        values: '0+10000x40'
+      - series: 'triage_http_request_duration_seconds_bucket{job="triage-api",instance="api:8000",method="GET",route="/v1/triage",le="+Inf"}'
+        values: '0+10000x40'
+      - series: 'triage_http_request_duration_seconds_bucket{job="other",instance="api:8000",method="POST",route="/v1/triage",le="0.1"}'
+        values: '0x40'
+      - series: 'triage_http_request_duration_seconds_bucket{job="other",instance="api:8000",method="POST",route="/v1/triage",le="0.25"}'
+        values: '0+10000x40'
+      - series: 'triage_http_request_duration_seconds_bucket{job="other",instance="api:8000",method="POST",route="/v1/triage",le="+Inf"}'
+        values: '0+10000x40'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: TriageAPIHighLatency
+        exp_alerts: []
+
+  - name: Idle initialized counters and unknown zero beside ready model never fire
+    interval: 15s
+    input_series:
+      - series: 'up{job="triage-api",instance="api:8000"}'
+        values: '1x40'
+      - series: 'triage_model_ready{job="triage-api",instance="api:8000",model_version="unknown"}'
+        values: '0x40'
+      - series: 'triage_model_ready{job="triage-api",instance="api:8000",model_version="demo-v1"}'
+        values: '1x40'
+      - series: 'triage_http_requests_total{job="triage-api",instance="api:8000",method="POST",route="/v1/triage",status="200"}'
+        values: '100x40'
+      - series: 'triage_http_requests_total{job="triage-api",instance="api:8000",method="POST",route="/v1/triage",status="500"}'
+        values: '10x40'
+      - series: 'triage_http_request_duration_seconds_bucket{job="triage-api",instance="api:8000",method="POST",route="/v1/triage",le="0.1"}'
+        values: '0x40'
+      - series: 'triage_http_request_duration_seconds_bucket{job="triage-api",instance="api:8000",method="POST",route="/v1/triage",le="+Inf"}'
+        values: '100x40'
+      - series: 'triage_http_request_duration_seconds_count{job="triage-api",instance="api:8000",method="POST",route="/v1/triage"}'
+        values: '100x40'
+      - series: 'triage_predictions_total{job="triage-api",instance="api:8000",model_version="demo-v1",triage_class="normal"}'
+        values: '100x40'
+      - series: 'triage_abstentions_total{job="triage-api",instance="api:8000",model_version="demo-v1"}'
+        values: '50x40'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: TriageAPIHighErrorRate
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: TriageAPIHighLatency
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: TriageAPIDown
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: TriageModelNotReady
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: TriageHighAbstentionRate
+        exp_alerts: []
+
+  - name: No traffic series before first request never causes ratio alerts
+    interval: 15s
+    input_series:
+      - series: 'up{job="triage-api",instance="api:8000"}'
+        values: '1x40'
+      - series: 'triage_model_ready{job="triage-api",instance="api:8000",model_version="demo-v1"}'
+        values: '1x40'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: TriageAPIHighErrorRate
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: TriageAPIHighLatency
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: TriageHighAbstentionRate
+        exp_alerts: []
+
+  - name: Scrape failure respects for and recovers without duplicate readiness alert
+    interval: 15s
+    input_series:
+      - series: 'up{job="triage-api",instance="api:8000"}'
+        values: '1x3 0x8 1x8'
+      - series: 'up{job="triage-api",instance="healthy:8000"}'
+        values: '1x21'
+      - series: 'up{job="other",instance="api:8000"}'
+        values: '0x21'
+      - series: 'triage_model_ready{job="triage-api",instance="api:8000",model_version="demo-v1"}'
+        values: '1x21'
+      - series: 'triage_model_ready{job="triage-api",instance="healthy:8000",model_version="demo-v1"}'
+        values: '1x21'
+    alert_rule_test:
+      - eval_time: 1m45s
+        alertname: TriageAPIDown
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: TriageAPIDown
+        exp_alerts:
+          - exp_labels:
+              job: triage-api
+              instance: api:8000
+              severity: critical
+            exp_annotations:
+              summary: API de triagem indisponivel para coleta
+              description: "api:8000: scrape de /metrics falha por 1m. Verifique processo, rede e alvo do Prometheus."
+      - eval_time: 2m
+        alertname: TriageModelNotReady
+        exp_alerts: []
+      - eval_time: 3m15s
+        alertname: TriageAPIDown
+        exp_alerts: []
+
+  - name: Model readiness zero respects for and recovers without healthy target masking it
+    interval: 15s
+    input_series:
+      - series: 'up{job="triage-api",instance="api:8000"}'
+        values: '1x20'
+      - series: 'up{job="triage-api",instance="healthy:8000"}'
+        values: '1x20'
+      - series: 'triage_model_ready{job="triage-api",instance="api:8000",model_version="unknown"}'
+        values: '0x20'
+      - series: 'triage_model_ready{job="triage-api",instance="api:8000",model_version="demo-v1"}'
+        values: '0x12 1x7'
+      - series: 'triage_model_ready{job="triage-api",instance="healthy:8000",model_version="demo-v1"}'
+        values: '1x20'
+      - series: 'triage_model_ready{job="other",instance="api:8000",model_version="demo-v1"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 45s
+        alertname: TriageModelNotReady
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: TriageModelNotReady
+        exp_alerts:
+          - &model_not_ready
+            exp_labels:
+              job: triage-api
+              instance: api:8000
+              severity: critical
+            exp_annotations:
+              summary: Modelo de triagem indisponivel apesar da API acessivel
+              description: "api:8000: /metrics responde, mas readiness do modelo esta zero ou ausente por 1m. Verifique artefato e preprocessador."
+      - eval_time: 3m15s
+        alertname: TriageModelNotReady
+        exp_alerts: []
+
+  - name: Missing readiness while scrape succeeds fires, but failed scrape does not duplicate it
+    interval: 15s
+    input_series:
+      - series: 'up{job="triage-api",instance="api:8000"}'
+        values: '1x20'
+      - series: 'up{job="triage-api",instance="down:8000"}'
+        values: '0x20'
+      - series: 'up{job="other",instance="unrelated:8000"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 45s
+        alertname: TriageModelNotReady
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: TriageModelNotReady
+        exp_alerts:
+          - *model_not_ready
+
+  - name: Abstention counts batch results, preserves model and target, respects for and recovers
+    interval: 15s
+    input_series:
+      # 1 request / 32 results. Six abstentions means 18.75%, not 600%.
+      - series: 'triage_http_requests_total{job="triage-api",instance="api:8000",method="POST",route="/v1/triage",status="200"}'
+        values: '0+1x49'
+      - series: 'triage_predictions_total{job="triage-api",instance="api:8000",model_version="demo-v1",triage_class="normal"}'
+        values: '0+16x49'
+      - series: 'triage_predictions_total{job="triage-api",instance="api:8000",model_version="demo-v1",triage_class="atencao"}'
+        values: '0+16x49'
+      - series: 'triage_abstentions_total{job="triage-api",instance="api:8000",model_version="demo-v1"}'
+        values: '0+6x49'
+      # 8 / 32 = 25%; only demo-v2 on api:8000 must fire.
+      - series: 'triage_predictions_total{job="triage-api",instance="api:8000",model_version="demo-v2",triage_class="normal"}'
+        values: '0+16x49'
+      - series: 'triage_predictions_total{job="triage-api",instance="api:8000",model_version="demo-v2",triage_class="urgente"}'
+        values: '0+16x49'
+      - series: 'triage_abstentions_total{job="triage-api",instance="api:8000",model_version="demo-v2"}'
+        values: '0+8x24 192x24'
+      - series: 'triage_predictions_total{job="triage-api",instance="healthy:8000",model_version="demo-v2",triage_class="normal"}'
+        values: '0+10000x49'
+      - series: 'triage_abstentions_total{job="triage-api",instance="healthy:8000",model_version="demo-v2"}'
+        values: '0x49'
+      - series: 'triage_predictions_total{job="other",instance="api:8000",model_version="demo-v2",triage_class="normal"}'
+        values: '0+10000x49'
+      - series: 'triage_abstentions_total{job="other",instance="api:8000",model_version="demo-v2"}'
+        values: '0x49'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: TriageHighAbstentionRate
+        exp_alerts: []
+      - eval_time: 5m15s
+        alertname: TriageHighAbstentionRate
+        exp_alerts:
+          - &high_abstention
+            exp_labels:
+              job: triage-api
+              instance: api:8000
+              model_version: demo-v2
+              severity: warning
+            exp_annotations:
+              summary: Taxa de abstencao da triagem acima de 20%
+              description: "api:8000 / demo-v2: mais de 20% dos resultados com abstencao na janela de 5m, por 5m. Verifique distribuicao de entrada e necessidade de revisao humana."
+      - eval_time: 6m
+        alertname: TriageHighAbstentionRate
+        exp_alerts:
+          - *high_abstention
+      - eval_time: 12m
+        alertname: TriageHighAbstentionRate
+        exp_alerts: []
+
+  - name: Counter resets preserve server error rate
+    interval: 15s
+    input_series:
+      - series: 'triage_http_requests_total{job="triage-api",instance="api:8000",method="POST",route="/v1/triage",status="200"}'
+        values: '0+9x12 0+9x24'
+      - series: 'triage_http_requests_total{job="triage-api",instance="api:8000",method="POST",route="/v1/triage",status="500"}'
+        values: '0+1x12 0+1x24'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: TriageAPIHighErrorRate
+        exp_alerts:
+          - *high_error

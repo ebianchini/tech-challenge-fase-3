@@ -3,7 +3,8 @@
 O item Prometheus da Etapa 3 instrumenta a aplicacao com `prometheus-client` e expoe `GET /metrics`.
 O endpoint esta descrito no OpenAPI e devolve somente metricas tecnicas no formato de exposicao
 Prometheus; a inclusao aditiva preserva a versao `1.0` do contrato de inferencia. A coleta por um
-servidor Prometheus, sua retencao, regras de alerta, Grafana e Compose sao entregas separadas.
+servidor local, sua retencao e regras de alerta estao descritas em
+[prometheus-local.md](prometheus-local.md). Grafana e seu provisionamento permanecem pendentes.
 
 ## Execucao e verificacao local
 
@@ -67,7 +68,7 @@ Os dois histogramas de latencia usam os buckets `0.001`, `0.005`, `0.01`, `0.02`
 Histogramas expoem series `_bucket`, `_sum` e `_count`; o cliente tambem pode expor timestamps
 `_created`. O bucket `le` e gerado pelo cliente, com esse conjunto fixo de limites.
 
-Exemplos de consultas para quando um coletor Prometheus estiver configurado:
+Exemplos de consultas no Prometheus local:
 
 ```promql
 sum(rate(triage_http_requests_total[5m]))
@@ -93,8 +94,10 @@ O comando padrao do Dockerfile explicita `--workers 1`.
 
 `/metrics` nao tem autenticacao na aplicacao. Restrinja-o por rede/security group e por regras do
 gateway: permita acesso somente ao coletor e mantenha essa rota fora da lista publica. Os comandos
-acima escutam apenas em loopback. No Docker, publicar a porta da API tambem permite acesso a
-`/metrics` nessa porta; a segmentacao de rede sera configurada no ambiente de destino.
+acima escutam apenas em loopback. No Compose local, API e Prometheus compartilham a rede bridge dedicada
+`observability`, separada da rede do Airflow. As portas publicadas escutam em `127.0.0.1`:
+`/metrics` continua acessivel localmente na porta da API. A segmentacao de rede do ambiente de
+destino deve ser configurada nesse ambiente.
 
 Esta instrumentacao descreve comportamento tecnico do prototipo sintetico. Readiness e taxa de
 abstencao nao representam aprovacao ou seguranca clinica.
@@ -130,5 +133,6 @@ com `prometheus-client` e confirmou tres predicoes, tres tamanhos, uma inferenci
 ready. Texto sintetico e request id estavam ausentes, e `/metrics` nao apareceu como label de rota.
 Essa verificacao executou a API diretamente, sem Docker ou servidor Prometheus.
 
-Essa evidencia valida a instrumentacao local. A coleta por um servidor Prometheus e sua operacao
-com infraestrutura real permanecem nos itens seguintes da Etapa 3.
+Essa evidencia valida a instrumentacao local. A configuracao e os testes do coletor local sao
+tratados em [prometheus-local.md](prometheus-local.md); a execucao integrada dos containers precisa
+ser confirmada em uma maquina com Docker.
