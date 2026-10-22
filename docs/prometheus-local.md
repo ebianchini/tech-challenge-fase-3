@@ -8,19 +8,17 @@ esta em [metrics.md](metrics.md).
 
 ## Subir a stack
 
-Requer Docker com suporte a containers Linux e Compose v2, alem de Python 3.11-3.13 e `uv` para
-gerar o modelo de demonstracao. Na raiz do repositorio:
+Requer Docker com suporte a containers Linux e Compose v2. Na raiz do repositorio:
 
 ```powershell
-uv sync --locked --extra dev
-uv run --no-sync python scripts/create_demo_model.py
 docker compose config --quiet
 docker compose up -d --build api prometheus
 docker compose ps api prometheus
 ```
 
-O Dockerfile copia `models/model.joblib` e `models/preprocessor.joblib`; a geracao precisa ocorrer
-antes do build. Esses artefatos sao sinteticos e nao constituem um modelo clinico aprovado.
+O build configurado no Compose gera o modelo de demonstracao dentro da imagem; nao precisa de
+Python nem de artefatos preparados no host. Esses artefatos sao sinteticos e nao constituem um
+modelo clinico aprovado.
 O comando explicita os servicos `api` e `prometheus`, sem iniciar os servicos Airflow/Postgres
 existentes no mesmo Compose. A API usa um worker por container.
 
@@ -34,15 +32,17 @@ Para incluir o dashboard Grafana ja provisionado, acrescente `grafana` ao comand
 | Prometheus | `http://127.0.0.1:9090` | Imagem `prom/prometheus:v3.13.3`; dados em `/prometheus`. |
 | Scrape | Interno ao Compose | Job `triage-api`, alvo `api:8000`, caminho `/metrics`, HTTP. |
 
-API, Prometheus e o Grafana opcional compartilham a rede bridge dedicada `observability`, isolada da rede usada
-pelo Airflow. As portas publicadas escutam somente em `127.0.0.1`. A API nao autentica `/metrics`,
+API e Prometheus compartilham a rede de scrape interna `api-internal`. Somente Prometheus e Grafana
+compartilham `observability`; a API possui uma rede separada para seu acesso local, e o perfil
+Airflow usa outra rede. A topologia completa esta em [compose-local.md](compose-local.md#redes-e-persistencia).
+As portas publicadas escutam somente em `127.0.0.1`. A API nao autentica `/metrics`,
 que continua acessivel ao usuario local pela porta 8000; essa configuracao e de desenvolvimento.
 O coletor nao usa `localhost:8000`, pois isso apontaria para o proprio container Prometheus.
 
 Scrapes e avaliacao das regras ocorrem a cada **15 segundos**, com timeout de scrape de **5
 segundos**. Os arquivos de configuracao sao montados somente para leitura.
 O Prometheus inicia apos o processo da API, sem exigir readiness positivo: assim tambem pode
-observar falhas no carregamento do modelo. O healthcheck da API vem do Dockerfile; o do coletor
+observar falhas no carregamento do modelo. O healthcheck da API confirma modelo/preprocessador carregados; o do coletor
 usa `promtool check ready`.
 
 ## Verificar coleta e consultas
@@ -159,6 +159,9 @@ Apos editar e validar os arquivos montados, aplique-os com `docker compose resta
 e confira os alvos e regras novamente. Alteracoes no Compose, incluindo retencao, exigem
 `docker compose up -d prometheus` para recriar o servico quando necessario.
 
+A validacao integrada de build, API, scrape, dashboard e persistencia fica em
+[compose-local.md](compose-local.md#validacao-integrada), usando `scripts/check_compose.py`.
+
 ## Validacao local de 22/10/2026
 
 Validado com os executaveis oficiais do Prometheus/promtool 3.13.3 para Windows, conferidos por
@@ -176,6 +179,8 @@ regras versionados, alterando somente o alvo de `api:8000` para uma porta tempor
   lockfile aprovados.
 
 O smoke gerou `reports/ci/prometheus-smoke.json`, ignorado pelo Git, e encerrou os processos
-temporarios. Nenhum texto clinico real foi usado. Docker nao esta instalado nesta maquina:
-build, rede entre containers, healthchecks e persistencia do volume apos recriacao ainda precisam
-ser verificados no ambiente Docker. Os comandos deste guia permitem reproduzir essa verificacao.
+temporarios. Nenhum texto clinico real foi usado. O baseline publicado `6f562a6` passou a criacao
+da stack Compose e o checker Grafana na
+[execucao 39865208559](https://github.com/ebianchini/tech-challenge-fase-3/actions/runs/39865208559).
+Docker nao esta instalado nesta maquina: as mudancas posteriores de build, redes e perfis e a
+nova verificacao de persistencia precisam ser executadas no commit atualizado com Docker.

@@ -44,36 +44,48 @@ Anotacao clinica proposta: [docs/annotation-protocol.md](docs/annotation-protoco
 ## Docker
 
 ```powershell
-docker build -t triage-laudos:dev .
-docker run --rm -p 8000:8000 triage-laudos:dev
+docker build --build-arg TRIAGE_MODEL_SOURCE=demo -t triage-laudos:dev .
+docker run --rm -p 127.0.0.1:8000:8000 triage-laudos:dev
 # PowerShell: executa readiness e uma requisicao sintetica, removendo o container ao final
 ./scripts/docker_smoke.ps1
 ```
 
 Endpoints: `GET /health/live`, `GET /health/ready`, `POST /v1/triage` e `GET /metrics`.
 
-Para executar a API com Prometheus e Grafana locais, gere o modelo sintetico antes do build:
+Para executar a stack local, use Docker com containers Linux e Compose v2:
 
 ```powershell
-uv sync --locked --extra dev
-uv run --no-sync python scripts/create_demo_model.py
-docker compose up -d --build api prometheus grafana
+docker compose config --quiet
+docker compose up -d --build --wait --wait-timeout 180
 ```
 
-Esse comando inicia somente esses tres servicos, sem Airflow. A API fica em
+O build do Compose gera o modelo sintetico dentro da imagem, sem precisar de Python ou
+artefatos preparados no host. O comando padrao inicia somente API, Prometheus e Grafana.
+Airflow/Postgres ficam no perfil opcional `airflow`. Com as portas de `.env.example`, a API fica em
 `http://127.0.0.1:8000`, o Prometheus em `http://127.0.0.1:9090` e o Grafana em
 `http://127.0.0.1:3000`. No Grafana, entre com **`admin` / `triage-local-demo`**, credenciais
 exclusivas desta demonstracao local, e abra **Dashboards > Triage > Triagem | operação do protótipo sintético**.
 O datasource e o dashboard sao provisionados automaticamente, sem importacao manual.
 
-A stack usa a rede bridge dedicada `observability`; as portas do host escutam somente em
-loopback. O historico Prometheus fica em `prometheus-data`, com retencao de 7 dias ou 1 GB,
+A stack separa redes de coleta, acesso a API, observabilidade e Airflow; as portas do host
+escutam somente em loopback. O historico Prometheus fica em `prometheus-data`, com retencao de 7 dias ou 1 GB,
 conforme o primeiro limite atingido. Reserve pelo menos 2 GB para esse volume; o limite da TSDB
 nao e uma quota rigida de disco. O Grafana persiste seu banco em `grafana-data`. Instrucoes de
-verificacao, alertas e operacao estao em [docs/prometheus-local.md](docs/prometheus-local.md) e
-[docs/grafana-local.md](docs/grafana-local.md). Para subir somente API e coletor, omita `grafana`
-do comando. A [captura do dashboard](docs/images/grafana-triage-overview.png) mostra os nove
+operacao, perfil Airflow e validacao integrada estao em [docs/compose-local.md](docs/compose-local.md).
+Coleta, alertas e dashboard estao em [docs/prometheus-local.md](docs/prometheus-local.md) e
+[docs/grafana-local.md](docs/grafana-local.md). Para subir somente API e coletor, explicite
+`api prometheus` no comando. A [captura do dashboard](docs/images/grafana-triage-overview.png) mostra os nove
 paineis com trafego sintetico; a evidencia e os limites de validacao estao no guia Grafana.
+
+Para executar o smoke completo em um projeto Compose temporario, com Docker ativo:
+
+```powershell
+uv sync --locked --extra dev
+uv run --no-sync python scripts/check_compose.py --output reports/ci/compose-smoke.json
+```
+
+O script verifica API, scrape, datasource, dashboard e consultas; recria o Grafana para verificar
+o provisionamento e a persistencia e remove somente os recursos do projeto temporario ao final.
 
 ## Pipeline de dados, modelo e DVC
 
@@ -118,7 +130,9 @@ O agendamento é manual por padrão; `TRIAGE_RETRAIN_SCHEDULE`, `TRIAGE_TASK_RET
 `TRIAGE_TASK_TIMEOUT_MINUTES`, `TRIAGE_DATA_PATH`, `TRIAGE_RUN_ROOT` e `TRIAGE_REGISTRY_ROOT`
 permitem parametrizar o ambiente. O registro usa o fingerprint do artefato como diretório
 imutável e só ocorre após o quality gate. Para modelo clínico, também exige
-`TRIAGE_CLINICAL_APPROVAL=approved`.
+`TRIAGE_CLINICAL_APPROVAL=approved`. Para executar o Airflow pelo Compose, ative o perfil
+`airflow` conforme [docs/compose-local.md](docs/compose-local.md#airflow-opcional); a configuracao
+local nao concede aprovacao clinica automaticamente.
 
 ## Integracao continua
 
@@ -132,8 +146,10 @@ A CI usa somente fixtures e modelos sinteticos, sem baixar datasets ou publicar 
 sao limitados aos relatorios explicitamente listados no workflow. Comandos locais, artefatos,
 atualizacao do contrato e passos para exigir o gate na branch estao em [docs/ci.md](docs/ci.md).
 
-A configuracao esta versionada; uma execucao verde no GitHub Actions e a protecao de branch ainda
-precisam ser confirmadas no repositorio remoto.
+A CI publicada no commit `6f562a6` concluiu a stack e o check de dashboard no
+[GitHub Actions](https://github.com/ebianchini/tech-challenge-fase-3/actions/runs/39865208559).
+A reorganizacao atual do Compose e seu novo smoke precisam de uma execucao do commit atualizado;
+a protecao de branch permanece uma configuracao remota separada.
 
 ## Entrega continua
 
@@ -173,4 +189,4 @@ veja [docs/grafana-local.md](docs/grafana-local.md) para consultas e verificacao
 
 Antes de qualquer uso hospitalar, ainda sao necessarios governanca clinica, dataset rotulado por
 especialistas, desidentificacao aprovada, protecao de branch com CI obrigatoria, configuracao e
-validacao do deploy AWS, validacao da stack local em Docker e comparacao de inferencia ONNX.
+validacao do deploy AWS, verificacao das alteracoes atuais da stack em Docker e comparacao de inferencia ONNX.

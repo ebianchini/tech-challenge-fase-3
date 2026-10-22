@@ -1,47 +1,99 @@
+# Default stack: API, Prometheus and Grafana. Enable Airflow with --profile airflow.
+x-logging: &local-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 x-airflow-common: &airflow-common
+  profiles: [airflow]
   build:
     context: .
     dockerfile: docker/airflow/Dockerfile
+  image: triage-airflow:local
   environment: &airflow-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "False"
-    AIRFLOW__CORE__STORE_SERIALIZED_DAGS: "True"
-    AIRFLOW__CORE__STORE_DAG_CODE: "True"
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__LOAD_DEFAULT_CONNECTIONS: "False"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "True"
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD:-airflow-local-demo}@postgres/airflow
     AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "False"
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-airflow-local-demo-web-secret}
     PYTHONPATH: /opt/airflow:/opt/airflow/src
     TRIAGE_PROJECT_ROOT: /opt/airflow
     TRIAGE_DATA_PATH: /opt/airflow/data/raw/medical_abstracts.csv
     TRIAGE_RUN_ROOT: /opt/airflow/artifacts/retraining
     TRIAGE_REGISTRY_ROOT: /opt/airflow/models/registry
     TRIAGE_PARAMS_PATH: /opt/airflow/params.yaml
-    TRIAGE_RETRAIN_SCHEDULE: "0 0 * * *"
+    TRIAGE_RETRAIN_SCHEDULE: ${TRIAGE_RETRAIN_SCHEDULE:-}
     TRIAGE_TASK_TIMEOUT_MINUTES: "30"
     TRIAGE_TASK_RETRIES: "2"
-    TRIAGE_CLINICAL_APPROVAL: approved
   volumes:
-    - .:/opt/airflow
-    - ./dags:/opt/airflow/dags
-    - ./src:/opt/airflow/src
-    - ./data:/opt/airflow/data
-    - ./models:/opt/airflow/models
-    - ./reports:/opt/airflow/reports
-    - ./artifacts:/opt/airflow/artifacts
+    - type: bind
+      source: ./dags
+      target: /opt/airflow/dags
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: ./src
+      target: /opt/airflow/src
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: ./params.yaml
+      target: /opt/airflow/params.yaml
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: ./data
+      target: /opt/airflow/data
+      read_only: true
+      bind:
+        create_host_path: false
+    - airflow-logs:/opt/airflow/logs
+    - airflow-artifacts:/opt/airflow/artifacts/retraining
+    - airflow-model-registry:/opt/airflow/models/registry
+  networks:
+    - airflow-backend
   depends_on:
     postgres:
       condition: service_healthy
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  logging: *local-logging
 
 services:
   api:
     build:
       context: .
       dockerfile: Dockerfile
-    image: triage-laudos:local
+      args:
+        TRIAGE_MODEL_SOURCE: demo
+    image: ${TRIAGE_API_IMAGE:-triage-laudos:local}
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:${API_PORT:-8000}:8000"
     networks:
-      - observability
+      - api-internal
+      - api-access
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import json,urllib.request;
+          r=json.load(urllib.request.urlopen('http://127.0.0.1:8000/health/ready',timeout=3));
+          assert r.get('status')=='ok' and r.get('model_loaded') is True
+          and r.get('preprocessor_loaded') is True
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     read_only: true
     tmpfs:
       - /tmp
@@ -49,6 +101,7 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    logging: *local-logging
     restart: unless-stopped
 
   prometheus:
@@ -68,10 +121,12 @@ services:
           create_host_path: false
       - prometheus-data:/prometheus
     ports:
-      - "127.0.0.1:9090:9090"
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
     networks:
+      - api-internal
       - observability
     depends_on:
+      # Keep collecting failed readiness and availability signals during API failures.
       api:
         condition: service_started
     healthcheck:
@@ -87,6 +142,7 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    logging: *local-logging
     restart: unless-stopped
 
   grafana:
@@ -116,7 +172,7 @@ services:
         bind:
           create_host_path: false
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
     networks:
       - observability
     depends_on:
@@ -135,50 +191,80 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    logging: *local-logging
     restart: unless-stopped
 
   postgres:
+    profiles: [airflow]
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: airflow
-      POSTGRES_PASSWORD: airflow
+      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD:-airflow-local-demo}
       POSTGRES_DB: airflow
     volumes:
-      - postgres-db-volume:/var/lib/postgresql/data
+      - airflow-metadata:/var/lib/postgresql/data
+    networks:
+      - airflow-backend
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 10s
+    logging: *local-logging
+    restart: unless-stopped
 
   airflow-init:
     <<: *airflow-common
-    image: triage-airflow:local
-    command: >
-      bash -lc "airflow db init && airflow users create --username admin --firstname Infra --lastname Ops --role Admin --email admin@example.com --password admin || true"
+    environment:
+      <<: *airflow-env
+      AIRFLOW_ADMIN_USER: ${AIRFLOW_ADMIN_USER:-admin}
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-airflow-local-demo}
+      AIRFLOW_ADMIN_EMAIL: ${AIRFLOW_ADMIN_EMAIL:-admin@example.com}
+    command: ["python", "/opt/airflow/scripts/init_airflow.py"]
     restart: "no"
 
   airflow-scheduler:
     <<: *airflow-common
-    image: triage-airflow:local
-    command: airflow scheduler
+    command: ["airflow", "scheduler"]
     depends_on:
+      postgres:
+        condition: service_healthy
       airflow-init:
         condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname \"$$HOSTNAME\""]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
     restart: unless-stopped
 
   airflow-webserver:
     <<: *airflow-common
-    image: triage-airflow:local
-    command: airflow webserver
+    command: ["airflow", "webserver"]
     depends_on:
+      postgres:
+        condition: service_healthy
       airflow-init:
         condition: service_completed_successfully
+      airflow-scheduler:
+        condition: service_healthy
+    networks:
+      - airflow-backend
+      - airflow-access
     ports:
-      - "8080:8080"
+      - "127.0.0.1:${AIRFLOW_PORT:-8080}:8080"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import json,urllib.request;
+          r=json.load(urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=5));
+          assert r['metadatabase']['status']=='healthy'
+          and r['scheduler']['status']=='healthy'
       interval: 20s
       timeout: 10s
       retries: 10
@@ -186,10 +272,23 @@ services:
     restart: unless-stopped
 
 volumes:
-  postgres-db-volume:
   prometheus-data:
   grafana-data:
+  airflow-metadata:
+  airflow-logs:
+  airflow-artifacts:
+  airflow-model-registry:
 
 networks:
+  api-internal:
+    driver: bridge
+    internal: true
+  api-access:
+    driver: bridge
   observability:
+    driver: bridge
+  airflow-backend:
+    driver: bridge
+    internal: true
+  airflow-access:
     driver: bridge

@@ -15,7 +15,7 @@ do repositorio.
 | `tests` | Geracao do modelo sintetico e Pytest com cobertura e relatorio JUnit; inclui os testes de Airflow com as dependencias reais instaladas. |
 | `dag` | Compilacao dos arquivos Python, importacao pelo `DagBag` real do Airflow e verificacao da estrutura de `triage_retrain`, sem executar tasks. |
 | `openapi` | Validacao formal da especificacao e comparacao dos contratos existentes com o baseline [openapi-contract.json](openapi-contract.json). |
-| `monitoring` | Validacao do Compose, configuracao Prometheus e testes das regras com `promtool` 3.13.3; build da API sintetica e smoke da stack API/Prometheus/Grafana 13.2.4, incluindo datasource, dashboard e consultas. |
+| `monitoring` | Validacao do Compose completo e regras com `promtool` 3.13.3, build da imagem opcional Airflow com lockfile e `check_compose.py` para API/Prometheus/Grafana 13.2.4, incluindo scrape, dashboard, consultas e recriacao do Grafana com persistencia. |
 | `CI required` | Gate final: exige sucesso de `lint`, `tests`, `dag`, `openapi` e `monitoring`; falha se algum desses jobs falhar, for cancelado ou pulado. |
 
 O nome literal do status obrigatorio e **`CI required`**. Mantenha esse nome estavel ao editar
@@ -45,32 +45,41 @@ reproduzidos em Windows com Python suportado. Os jobs `tests` e `dag` usam ambos
 no runner Linux. O modelo sintetico precisa ser gerado antes de executar a suite de testes.
 
 O job `monitoring` usa Docker/Compose e o `promtool` da imagem fixada para validar configuracao
-e cenarios de alerta. Depois constroi a API com modelo sintetico, sobe API/Prometheus/Grafana,
-aguarda os healthchecks e verifica o provisionamento e as consultas via
-[scripts/check_grafana.py](../scripts/check_grafana.py). Nao sobe Airflow nem acessa datasets.
+de todos os perfis e cenarios de alerta. Constroi a imagem opcional Airflow com o lockfile,
+sem iniciar seus servicos. Depois executa [scripts/check_compose.py](../scripts/check_compose.py),
+que constroi a API com modelo sintetico, sobe API/Prometheus/Grafana em projeto proprio,
+aguarda os healthchecks e verifica contrato HTTP, scrape, provisionamento e consultas. O script
+recria o Grafana e repete o check para confirmar o estado persistido. Nao sobe Airflow nem acessa datasets.
 Reproduza a partir da raiz do repositorio:
 
 ```powershell
-docker compose config --quiet
+docker compose --profile airflow config --quiet
 docker compose run --rm --no-deps --entrypoint /bin/promtool prometheus check config /etc/prometheus/prometheus.yml
 docker compose run --rm --no-deps --entrypoint /bin/promtool prometheus test rules /etc/prometheus/alerts.test.yml
 uv sync --locked --extra dev
-uv run --no-sync python scripts/create_demo_model.py
-docker compose up -d --build --wait --wait-timeout 180 api prometheus grafana
-uv run --no-sync python scripts/check_grafana.py --output reports/ci/grafana-smoke.json
+docker compose --profile airflow build airflow-init
+uv run --no-sync python scripts/check_compose.py --timeout 900 --output reports/ci/compose-smoke.json
 ```
 
 Os cenarios verificam disparo e recuperacao, limites, periodos `for`, falta de trafego,
-readiness e isolamento por alvo/versao de modelo. A suite Pytest inclui testes do checker
-Grafana, com respostas HTTP sinteticas. Para o smoke, as credenciais sao lidas de
-`GRAFANA_ADMIN_USER` e `GRAFANA_ADMIN_PASSWORD`, com os mesmos defaults da demonstracao local.
-O checker distingue a URL local do Grafana da URL interna `http://prometheus:9090` do datasource.
+readiness e isolamento por alvo/versao de modelo. A suite Pytest inclui testes dos checkers
+Grafana e Compose com respostas simuladas. O smoke Compose usa projeto com nome aleatorio,
+portas dinamicas em loopback e suas proprias credenciais de demonstracao, sem carregar o `.env`
+do usuario. Seu check Grafana distingue a URL local do servidor da URL interna
+`http://prometheus:9090` do datasource.
 Operacao e verificacao da stack estao em [prometheus-local.md](prometheus-local.md) e
 [grafana-local.md](grafana-local.md).
 
-O runner descartavel encerra a stack e remove seus volumes ao final, inclusive em falha. Na
+O script encerra a stack temporaria e remove somente seus volumes ao final, inclusive em falha. Na
 maquina de desenvolvimento, prefira `docker compose stop api prometheus grafana` para preservar
-o historico. O smoke configurado na CI ainda precisa ser confirmado no GitHub Actions.
+o historico. A CI do commit publicado `6f562a6` passou a criacao da stack e o check Grafana na
+[execucao 39865208559](https://github.com/ebianchini/tech-challenge-fase-3/actions/runs/39865208559).
+O [registro versionado](evidence/grafana-compose-ci.json) identifica o commit, job e artefato
+desse baseline, junto das limitacoes do checker original.
+O novo fluxo `check_compose.py` precisa de uma execucao do commit atualizado para comprovar as
+alteracoes de build, perfis, redes e persistencia descritas em [compose-local.md](compose-local.md).
+O job concede 900 segundos ao smoke; o build e a inicializacao real do perfil Airflow sao
+verificacoes distintas, e seus servicos nao sao iniciados por esse smoke.
 
 ## Validacao local inicial da CI
 
@@ -85,8 +94,8 @@ Em 22/10/2026, com Python 3.12.15 e as dependencias do lockfile, foram verificad
 
 Essas verificacoes da entrega inicial foram locais em Windows. A entrega posterior de CD
 amplia a cobertura para os scripts; veja os resultados atuais em [cd.md](cd.md).
-A execucao no runner Linux do GitHub Actions e
-os uploads remotos ainda precisam ser confirmados apos publicar o workflow.
+O baseline publicado possui execucao verde no runner Linux; as alteracoes posteriores devem ser
+confirmadas em uma execucao do respectivo commit.
 
 ## Artefatos e privacidade
 
@@ -97,7 +106,7 @@ Os uploads usam somente os caminhos abaixo, com retencao de 14 dias:
 | `tests` | `reports/ci/coverage.xml`, `reports/ci/coverage-html/`, `reports/ci/junit.xml` | Cobertura do codigo e resultados dos testes com fixtures sinteticas. |
 | `dag` | `reports/ci/dag-validation.json` | Identificador da DAG, estrutura das tasks e resultado das validacoes. |
 | `openapi` | `reports/ci/openapi.json` | Especificacao HTTP gerada, sem exemplos de dados reais. |
-| `monitoring` | `reports/ci/grafana-smoke.json` | Resultado tecnico do provisionamento e das consultas, sem credenciais ou textos de entrada. |
+| `monitoring` | `reports/ci/compose-smoke.json` | Resultado tecnico dos servicos, scrape, provisionamento, consultas e recriacao, sem credenciais ou textos de entrada. |
 
 A CI nao executa `dvc pull`, nao acessa corpus hospitalar e nao precisa de credenciais AWS
 ou acesso a servicos externos de dados. Modelos, datasets, logs Airflow e o diretorio inteiro
@@ -128,8 +137,9 @@ ela nao o regenera automaticamente.
 
 ## Exigir CI verde na branch principal
 
-O workflow esta implementado no repositorio local. Sua primeira execucao no GitHub Actions e
-a protecao de `main` permanecem pendentes de verificacao remota. Versionar o YAML nao configura
+O workflow possui uma execucao verde no baseline publicado; novas alteracoes precisam de uma
+execucao no commit correspondente. A protecao de `main` permanece pendente de verificacao remota.
+Versionar o YAML nao configura
 essa protecao. A conta conectada nesta entrega possui permissao de escrita, mas nao de
 administracao/manutencao do repositorio; um administrador precisa aplicar a regra.
 
@@ -143,7 +153,7 @@ Depois de publicar a alteracao no GitHub:
    merging** e adicione o status **CI required** emitido por GitHub Actions.
 4. Salve a regra e confira em um pull request direcionado a `main` que o status e obrigatorio
    e que a mesclagem fica bloqueada quando ele falha.
-5. So entao marque o item de branch protection no [TODO](../TODO.md). A evidencia de CI/CD
+5. So entao marque o item de branch protection no `TODO.md` de apoio. A evidencia de CI/CD
    e o Definition of Done continuam pendentes ate as verificacoes remotas correspondentes.
 
 Esses passos seguem a [documentacao de protecao de branches do GitHub](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/managing-a-branch-protection-rule).

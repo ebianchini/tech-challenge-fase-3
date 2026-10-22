@@ -7,18 +7,18 @@ O Prometheus continua responsavel pela coleta e pelas regras de alerta; veja
 
 ## Subir e acessar
 
-Requer Docker com suporte a containers Linux e Compose v2, Python 3.11-3.13 e `uv`. Na raiz:
+Requer Docker com suporte a containers Linux e Compose v2. Na raiz:
 
 ```powershell
-uv sync --locked --extra dev
-uv run --no-sync python scripts/create_demo_model.py
 docker compose config --quiet
-docker compose up -d --build api prometheus grafana
+docker compose up -d --build --wait --wait-timeout 180
 docker compose ps api prometheus grafana
 ```
 
-Esse comando sobe somente API, Prometheus e Grafana, sem Airflow/Postgres. O modelo de
-demonstracao e sintetico e precisa existir antes do build da API.
+Sem perfil adicional, esse comando sobe somente API, Prometheus e Grafana. Airflow/Postgres
+pertencem ao perfil opcional `airflow`. O build da API gera o modelo sintetico dentro da imagem,
+sem preparar artefatos no host. Portas, configuracao local e ciclo de vida da stack estao em
+[compose-local.md](compose-local.md); as URLs deste guia assumem os defaults de `.env.example`.
 
 Abra `http://127.0.0.1:3000` e entre com **usuario `admin` e senha `triage-local-demo`**.
 Essas credenciais sao exclusivas da demonstracao local. O Compose permite definir
@@ -37,7 +37,7 @@ o navegador continua acessando os servicos pelas portas locais.
 | Configuracao | Valor |
 | --- | --- |
 | Grafana | `grafana/grafana:13.2.4`, porta `127.0.0.1:3000`. |
-| Rede | `observability`, compartilhada com API e Prometheus, separada do Airflow. |
+| Rede | `observability`, compartilhada somente com Prometheus, separada da API e do Airflow. |
 | Banco e estado do Grafana | Volume nomeado `grafana-data` em `/var/lib/grafana`. |
 | Provisionamento | `grafana/provisioning` montado em `/etc/grafana/provisioning`, somente leitura. |
 | Dashboard | `grafana/dashboards` montado em `/var/lib/grafana/dashboards`, somente leitura. |
@@ -97,9 +97,12 @@ apos o startup podem refletir falta de amostras; um alvo DOWN deve ser investiga
 
 O checker [scripts/check_grafana.py](../scripts/check_grafana.py) verifica o Grafana em execucao,
 o datasource e o dashboard provisionados e a execucao das consultas. Use as mesmas credenciais
-do banco local; elas sao lidas pelas variaveis `GRAFANA_ADMIN_USER` e `GRAFANA_ADMIN_PASSWORD`:
+do banco local; elas sao lidas pelas variaveis `GRAFANA_ADMIN_USER` e `GRAFANA_ADMIN_PASSWORD`.
+O checker standalone nao carrega `.env`: se personalizou as credenciais nesse arquivo, exporte
+os mesmos valores no terminal. Com os defaults da demonstracao:
 
 ```powershell
+uv sync --locked --extra dev
 $env:GRAFANA_ADMIN_USER = "admin"
 $env:GRAFANA_ADMIN_PASSWORD = "triage-local-demo"
 uv run --no-sync python scripts/check_grafana.py --base-url http://127.0.0.1:3000 --prometheus-url http://prometheus:9090 --output reports/ci/grafana-smoke.json
@@ -110,7 +113,10 @@ endereco esperado **na configuracao do datasource**, acessivel pelo backend do G
 Compose ele usa o nome de servico `prometheus`. O checker aceita respostas sem amostras quando
 nao ha trafego: ele confirma a execucao das consultas sem erro, enquanto a carga sintetica e a
 inspecao visual confirmam a apresentacao dos dados. O relatorio grava somente evidencia tecnica,
-sem senha ou texto de entrada. A CI inclui esse check no job `monitoring`; veja [ci.md](ci.md).
+sem senha ou texto de entrada. Para validar tambem a criacao dos containers, API, scrape e
+recriacao do Grafana com persistencia, use `scripts/check_compose.py`, descrito em
+[compose-local.md](compose-local.md#validacao-integrada). A CI executa essa validacao no job
+`monitoring`; veja [ci.md](ci.md).
 
 ## Alterar e preservar
 
@@ -163,6 +169,15 @@ processos nativos temporarios.
 
 Relatorios locais em `reports/ci/grafana-smoke.json`, `grafana-native-evidence.json` e
 `grafana-render.json`, ignorados pelo Git. Os processos temporarios foram encerrados ao final.
-Docker nao esta instalado nesta maquina. Build, rede e healthchecks entre containers e
-persistencia apos recriacao continuam pendentes de verificacao em Docker. A CI implementa esse
-smoke com `docker compose up --wait`; sua execucao remota ainda precisa ser confirmada.
+O commit publicado `6f562a6` tambem passou a inicializacao da stack por Compose e o checker das
+onze consultas dos nove paineis no
+[GitHub Actions, execucao 39865208559](https://github.com/ebianchini/tech-challenge-fase-3/actions/runs/39865208559),
+comprovando o provisionamento automatico do dashboard nessa versao.
+O [registro versionado](evidence/grafana-compose-ci.json) conserva commit, job e relatorio do
+artefato; as consultas do checker aceitam resultados vazios, portanto essa evidencia remota
+nao demonstra trafego nem incrementos das metricas.
+
+Docker nao esta instalado nesta maquina. A reorganizacao posterior de redes/perfis, o build
+do modelo dentro da imagem e o novo smoke com recriacao do Grafana ainda precisam de uma execucao
+do commit atualizado em Docker. [compose-local.md](compose-local.md#validacao-integrada) descreve
+a verificacao e distingue essa pendencia da evidencia do baseline publicado.

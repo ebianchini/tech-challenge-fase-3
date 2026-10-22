@@ -1,0 +1,33 @@
+{
+  "validated_at": "2026-10-22",
+  "source_commit": "6f562a6f26230b8eea445b96014cafbf1a970100",
+  "scope": "Grafana automatic provisioning in the Compose configuration of source_commit; excludes subsequent network/profile changes",
+  "workflow_run": "https://github.com/ebianchini/tech-challenge-fase-3/actions/runs/39865208559",
+  "job": "https://github.com/ebianchini/tech-challenge-fase-3/actions/runs/39865208559/job/120125559184",
+  "conclusion": "success",
+  "startup_command": "docker compose up -d --build --wait --wait-timeout 180 api prometheus grafana",
+  "healthy_services": ["api", "prometheus", "grafana"],
+  "artifact": {
+    "name": "grafana-smoke",
+    "url": "https://github.com/ebianchini/tech-challenge-fase-3/actions/runs/39865208559/artifacts/12463287805",
+    "zip_sha256": "acace70485a45853eb70ebf620de81285b861f539ba789ed0cb088bf9ce4dafc",
+    "report": {
+      "status": "passed",
+      "checks": {
+        "health": "passed",
+        "datasource": "passed",
+        "datasource_health": "passed",
+        "dashboard": "passed",
+        "panel_queries": "passed"
+      },
+      "request_count": 13,
+      "readiness_attempts": 1,
+      "panel_count": 9,
+      "query_count": 11
+    }
+  },
+  "limitations": [
+    "The original smoke accepts empty query results and does not prove scrape up=1 or counter increments",
+    "This evidence does not validate subsequent Compose networking, profiles or persistence tests"
+  ]
+}

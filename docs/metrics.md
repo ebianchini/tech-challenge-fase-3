@@ -95,8 +95,9 @@ O comando padrao do Dockerfile explicita `--workers 1`.
 
 `/metrics` nao tem autenticacao na aplicacao. Restrinja-o por rede/security group e por regras do
 gateway: permita acesso somente ao coletor e mantenha essa rota fora da lista publica. Os comandos
-acima escutam apenas em loopback. No Compose local, API e Prometheus compartilham a rede bridge dedicada
-`observability`, separada da rede do Airflow. As portas publicadas escutam em `127.0.0.1`:
+acima escutam apenas em loopback. No Compose local, API e Prometheus compartilham a rede interna
+`api-internal`; Grafana e Prometheus usam `observability`, separada da API e do Airflow.
+As portas publicadas escutam em `127.0.0.1`:
 `/metrics` continua acessivel localmente na porta da API. A segmentacao de rede do ambiente de
 destino deve ser configurada nesse ambiente.
 
@@ -135,5 +136,5 @@ ready. Texto sintetico e request id estavam ausentes, e `/metrics` nao apareceu 
 Essa verificacao executou a API diretamente, sem Docker ou servidor Prometheus.
 
 Essa evidencia valida a instrumentacao local. A configuracao e os testes do coletor local sao
-tratados em [prometheus-local.md](prometheus-local.md); a execucao integrada dos containers precisa
-ser confirmada em uma maquina com Docker.
+tratados em [prometheus-local.md](prometheus-local.md). A evidencia do dashboard publicado e os
+passos para validar as alteracoes atuais da stack estao em [compose-local.md](compose-local.md).
