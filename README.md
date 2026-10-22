@@ -2,7 +2,8 @@
 
 Projeto iniciado conforme o [SDD](SDD.md). Esta entrega cobre a fundacao das Etapas 0 e 1: governanca
 documentada, API FastAPI, contrato versionado, carregamento singleton no startup, health checks,
-abstencao tecnica, container multi-stage e testes do dominio e da API.
+abstencao tecnica, container multi-stage e testes do dominio e da API. A Etapa 2 inclui o pipeline
+offline, DVC, DAG Airflow e a configuracao de CI descrita abaixo.
 
 O artefato atual e uma demonstracao tecnica treinada com texto sintetico. O Medical Abstracts TC
 Corpus nao possui, por si so, labels de urgencia clinica. Nenhum resultado atual deve ser interpretado
@@ -94,8 +95,23 @@ permitem parametrizar o ambiente. O registro usa o fingerprint do artefato como 
 imutável e só ocorre após o quality gate. Para modelo clínico, também exige
 `TRIAGE_CLINICAL_APPROVAL=approved`.
 
+## Integracao continua
+
+O workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) executa em todo push e pull request,
+com Python 3.12 e dependencias de `uv.lock`. Os jobs verificam Ruff, Pytest com cobertura, sintaxe e
+carregamento da DAG pelo Airflow real, e contrato OpenAPI contra um baseline versionado. O gate
+final **`CI required`** exige sucesso de todas essas verificacoes.
+
+A CI usa somente fixtures e modelos sinteticos, sem baixar datasets ou publicar modelos. Os uploads
+sao limitados aos relatorios explicitamente listados no workflow. Comandos locais, artefatos,
+atualizacao do contrato e passos para exigir o gate na branch estao em [docs/ci.md](docs/ci.md).
+
+A configuracao esta versionada; uma execucao verde no GitHub Actions e a protecao de branch ainda
+precisam ser confirmadas no repositorio remoto. O checklist [TODO.md](TODO.md) distingue essas
+pendencias da implementacao local.
+
 ## Proximos bloqueios
 
 Antes de qualquer uso hospitalar, ainda sao necessarios governanca clinica, dataset rotulado por
-especialistas, desidentificacao aprovada, pipeline batch, CI/CD, observabilidade Prometheus/Grafana,
-DVC, Airflow e comparacao ONNX conforme [TODO](TODO.md).
+especialistas, desidentificacao aprovada, protecao de branch com CI obrigatoria, CD,
+observabilidade Prometheus/Grafana e comparacao de inferencia ONNX conforme [TODO](TODO.md).

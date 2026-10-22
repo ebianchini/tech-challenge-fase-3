@@ -61,18 +61,36 @@ def test_airflow_task_functions_exchange_files_not_datasets(tmp_path) -> None:
     assert not (run_dir / "texts.json").exists()
 
 
-def test_dag_has_expected_tasks_when_airflow_is_available() -> None:
+def test_dag_loads_without_executing_tasks_when_airflow_is_available(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setenv("AIRFLOW_HOME", str(tmp_path / "airflow"))
+    monkeypatch.setenv("AIRFLOW__CORE__LOAD_EXAMPLES", "false")
+    monkeypatch.setenv("TRIAGE_DATA_PATH", str(tmp_path / "dataset-does-not-exist.csv"))
+    monkeypatch.setenv("TRIAGE_RUN_ROOT", str(tmp_path / "runs"))
+    monkeypatch.setenv("TRIAGE_REGISTRY_ROOT", str(tmp_path / "registry"))
     pytest.importorskip("airflow")
-    from dags.triage_retrain import dag
 
-    assert {
+    from scripts.validate_dag import validate_dag
+    from triage.training import airflow_tasks
+
+    def unexpected_execution(*args, **kwargs):
+        raise AssertionError("O carregamento da DAG nao deve executar tarefas.")
+
+    for name in (
         "load_data",
         "validate_data",
         "prepare_splits",
         "train_model",
-        "evaluate_model",
+        "evaluate_model_task",
         "export_onnx",
         "benchmark_latency",
         "register_if_approved",
-    } == set(dag.task_ids)
-    assert dag.catchup is False
+    ):
+        monkeypatch.setattr(airflow_tasks, name, unexpected_execution)
+
+    report = validate_dag()
+
+    assert report["status"] == "passed"
+    assert not (tmp_path / "runs").exists()
+    assert not (tmp_path / "registry").exists()
