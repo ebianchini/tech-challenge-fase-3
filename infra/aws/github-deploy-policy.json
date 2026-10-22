@@ -1,0 +1,83 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "EcrAuthentication",
+      "Effect": "Allow",
+      "Action": "ecr:GetAuthorizationToken",
+      "Resource": "*"
+    },
+    {
+      "Sid": "OneImmutableRepository",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:BatchGetImage",
+        "ecr:CompleteLayerUpload",
+        "ecr:DescribeImages",
+        "ecr:DescribeRepositories",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:InitiateLayerUpload",
+        "ecr:PutImage",
+        "ecr:UploadLayerPart"
+      ],
+      "Resource": "arn:aws:ecr:__AWS_REGION__:__AWS_ACCOUNT_ID__:repository/__ECR_REPOSITORY__"
+    },
+    {
+      "Sid": "ReadAndUpdateOneService",
+      "Effect": "Allow",
+      "Action": ["ecs:DescribeServices", "ecs:UpdateService"],
+      "Resource": "arn:aws:ecs:__AWS_REGION__:__AWS_ACCOUNT_ID__:service/__ECS_CLUSTER__/__ECS_SERVICE__"
+    },
+    {
+      "Sid": "ReadTaskDefinitions",
+      "Effect": "Allow",
+      "Action": "ecs:DescribeTaskDefinition",
+      "Resource": "*"
+    },
+    {
+      "Sid": "RegisterOneTaskFamily",
+      "Effect": "Allow",
+      "Action": ["ecs:RegisterTaskDefinition", "ecs:ListTagsForResource"],
+      "Resource": "arn:aws:ecs:__AWS_REGION__:__AWS_ACCOUNT_ID__:task-definition/__TASK_FAMILY__:*"
+    },
+    {
+      "Sid": "PreserveTagsWhenRegisteringTaskDefinition",
+      "Effect": "Allow",
+      "Action": "ecs:TagResource",
+      "Resource": "arn:aws:ecs:__AWS_REGION__:__AWS_ACCOUNT_ID__:task-definition/__TASK_FAMILY__:*",
+      "Condition": {
+        "StringEquals": {"ecs:CreateAction": "RegisterTaskDefinition"}
+      }
+    },
+    {
+      "Sid": "ListTasksInOneCluster",
+      "Effect": "Allow",
+      "Action": "ecs:ListTasks",
+      "Resource": "*",
+      "Condition": {
+        "ArnEquals": {
+          "ecs:cluster": "arn:aws:ecs:__AWS_REGION__:__AWS_ACCOUNT_ID__:cluster/__ECS_CLUSTER__"
+        }
+      }
+    },
+    {
+      "Sid": "ReadTasksInOneCluster",
+      "Effect": "Allow",
+      "Action": "ecs:DescribeTasks",
+      "Resource": "arn:aws:ecs:__AWS_REGION__:__AWS_ACCOUNT_ID__:task/__ECS_CLUSTER__/*"
+    },
+    {
+      "Sid": "PassOnlyTaskRolesToEcsTasks",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": [
+        "arn:aws:iam::__AWS_ACCOUNT_ID__:role/__EXECUTION_ROLE_NAME__",
+        "arn:aws:iam::__AWS_ACCOUNT_ID__:role/__TASK_ROLE_NAME__"
+      ],
+      "Condition": {
+        "StringEquals": {"iam:PassedToService": "ecs-tasks.amazonaws.com"}
+      }
+    }
+  ]
+}

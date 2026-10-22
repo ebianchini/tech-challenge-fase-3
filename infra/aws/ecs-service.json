@@ -1,0 +1,30 @@
+{
+  "cluster": "__ECS_CLUSTER__",
+  "serviceName": "__ECS_SERVICE__",
+  "taskDefinition": "__TASK_FAMILY__:__INITIAL_TASK_REVISION__",
+  "desiredCount": 2,
+  "launchType": "FARGATE",
+  "platformVersion": "1.4.0",
+  "deploymentController": {"type": "ECS"},
+  "deploymentConfiguration": {
+    "minimumHealthyPercent": 100,
+    "maximumPercent": 200,
+    "deploymentCircuitBreaker": {"enable": true, "rollback": true}
+  },
+  "healthCheckGracePeriodSeconds": 60,
+  "networkConfiguration": {
+    "awsvpcConfiguration": {
+      "subnets": ["__PRIVATE_SUBNET_A__", "__PRIVATE_SUBNET_B__"],
+      "securityGroups": ["__API_SECURITY_GROUP_ID__"],
+      "assignPublicIp": "DISABLED"
+    }
+  },
+  "loadBalancers": [
+    {
+      "targetGroupArn": "__ALB_TARGET_GROUP_ARN__",
+      "containerName": "__ECS_CONTAINER_NAME__",
+      "containerPort": 8000
+    }
+  ],
+  "enableExecuteCommand": false
+}

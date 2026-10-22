@@ -1,0 +1,6 @@
+{
+  "repositoryName": "__ECR_REPOSITORY__",
+  "imageTagMutability": "IMMUTABLE",
+  "imageScanningConfiguration": {"scanOnPush": true},
+  "encryptionConfiguration": {"encryptionType": "AES256"}
+}

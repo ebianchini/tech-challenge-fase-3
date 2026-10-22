@@ -1,0 +1,233 @@
+name: CD
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Ambiente de destino
+        required: true
+        type: choice
+        options: [dev, staging, production]
+      commit_sha:
+        description: SHA completo de um commit da main com CI verde
+        required: true
+        type: string
+      release_tag:
+        description: Tag vMAJOR.MINOR.PATCH do mesmo commit (obrigatoria em production)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  UV_NO_PROGRESS: "1"
+  PYTHONDONTWRITEBYTECODE: "1"
+  AWS_PAGER: ""
+
+jobs:
+  release:
+    name: Verify release and CI
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (vars.CD_ENABLED == 'true' && github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      sha: ${{ steps.release.outputs.sha }}
+      environment: ${{ steps.release.outputs.environment }}
+      controller_sha: ${{ steps.release.outputs.controller_sha }}
+    steps:
+      # Use the trusted workflow revision to verify the candidate before checking it out.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/heads/main
+          persist-credentials: false
+      - name: Require successful CI for the exact main commit
+        id: release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 -m scripts.resolve_release
+          echo "controller_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  deliver:
+    name: Publish and deploy
+    needs: release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment:
+      name: ${{ needs.release.outputs.environment }}
+    concurrency:
+      group: cd-${{ needs.release.outputs.environment }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RELEASE_SHA: ${{ needs.release.outputs.sha }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+      AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+      ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+      ECS_SERVICE: ${{ vars.ECS_SERVICE }}
+      ECS_CONTAINER_NAME: ${{ vars.ECS_CONTAINER_NAME }}
+      APP_BASE_URL: ${{ vars.APP_BASE_URL }}
+    steps:
+      - name: Start delivery budget
+        run: echo "CD_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release.outputs.controller_sha }}
+          persist-credentials: false
+      - name: Check out the approved application source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release.outputs.sha }}
+          path: .release-source
+          persist-credentials: false
+      - name: Check environment configuration
+        run: |
+          python3 - <<'PY'
+          import os, re
+          from urllib.parse import urlsplit
+          required = (
+              'AWS_REGION', 'AWS_ACCOUNT_ID', 'AWS_ROLE_ARN', 'ECR_REPOSITORY',
+              'ECS_CLUSTER', 'ECS_SERVICE', 'ECS_CONTAINER_NAME', 'APP_BASE_URL',
+          )
+          if any(not os.environ.get(key) for key in required):
+              raise SystemExit('Configure todas as variaveis do GitHub Environment; veja docs/cd.md.')
+          account = os.environ['AWS_ACCOUNT_ID']
+          if not re.fullmatch(r'[0-9]{12}', account):
+              raise SystemExit('AWS_ACCOUNT_ID invalido.')
+          if not re.fullmatch(r'arn:aws(?:-cn|-us-gov)?:iam::' + account + r':role/[\w+=,.@/-]+', os.environ['AWS_ROLE_ARN']):
+              raise SystemExit('AWS_ROLE_ARN precisa pertencer a conta configurada.')
+          url = urlsplit(os.environ['APP_BASE_URL'])
+          if url.scheme != 'https' or not url.hostname or url.username or url.password or url.query or url.fragment:
+              raise SystemExit('APP_BASE_URL deve ser uma URL HTTPS sem credenciais ou query.')
+          PY
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.13.4"
+          python-version: "3.12.15"
+          enable-cache: false
+      - run: uv sync --locked --extra dev
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+          role-session-name: triage-cd-${{ github.run_id }}
+          role-duration-seconds: 3600
+          unset-current-credentials: true
+          mask-aws-account-id: true
+      - name: Resolve immutable ECR tag
+        id: registry
+        run: >-
+          uv run --no-sync python -m scripts.ecr_image
+          --repository "$ECR_REPOSITORY" --tag "git-$RELEASE_SHA" --output "$GITHUB_OUTPUT"
+      - name: Log in to ECR using temporary credentials
+        env:
+          REPOSITORY_URI: ${{ steps.registry.outputs.repository_uri }}
+        run: |
+          aws ecr get-login-password --region "$AWS_REGION" |
+            docker login --username AWS --password-stdin "${REPOSITORY_URI%%/*}"
+      - name: Reuse the previously published commit image
+        if: ${{ steps.registry.outputs.digest != '' }}
+        env:
+          REPOSITORY_URI: ${{ steps.registry.outputs.repository_uri }}
+          IMAGE_DIGEST: ${{ steps.registry.outputs.digest }}
+        run: |
+          docker pull --platform linux/amd64 "$REPOSITORY_URI@$IMAGE_DIGEST"
+          docker tag "$REPOSITORY_URI@$IMAGE_DIGEST" "triage-laudos:git-$RELEASE_SHA"
+      - name: Build image with a synthetic demo model
+        if: ${{ steps.registry.outputs.digest == '' }}
+        working-directory: .release-source
+        run: |
+          uv sync --locked
+          uv run --no-sync python scripts/create_demo_model.py
+          docker build --platform linux/amd64 --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+            --tag "triage-laudos:git-$RELEASE_SHA" .
+      - name: Smoke test the exact image to publish
+        run: |
+          docker run --detach --name triage-cd-smoke \
+            --publish 127.0.0.1:8000:8000 --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,size=64m "triage-laudos:git-$RELEASE_SHA"
+          uv run --no-sync python -m scripts.check_api --base-url http://127.0.0.1:8000 \
+            --timeout 120 --output reports/cd/smoke.json
+      - name: Scan image vulnerabilities
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          image: triage-laudos:git-${{ needs.release.outputs.sha }}
+          grype-version: v0.118.0
+          fail-build: true
+          severity-cutoff: high
+          only-fixed: false
+          output-format: json
+          output-file: reports/cd/vulnerabilities.json
+          config: infra/grype.yaml
+          cache-db: false
+      - name: Publish the new immutable commit tag
+        if: ${{ steps.registry.outputs.digest == '' }}
+        env:
+          REPOSITORY_URI: ${{ steps.registry.outputs.repository_uri }}
+        run: |
+          docker tag "triage-laudos:git-$RELEASE_SHA" "$REPOSITORY_URI:git-$RELEASE_SHA"
+          docker push "$REPOSITORY_URI:git-$RELEASE_SHA"
+      - name: Resolve the published digest
+        id: image
+        run: >-
+          uv run --no-sync python -m scripts.ecr_image --require-image
+          --repository "$ECR_REPOSITORY" --tag "git-$RELEASE_SHA" --output "$GITHUB_OUTPUT"
+      - name: Reserve time for deployment and rollback
+        run: |
+          if (( $(date +%s) - CD_STARTED_AT > 1500 )); then
+            echo "Preparation exceeded 25 minutes; ECS was not changed. Retry the delivery."
+            exit 1
+          fi
+      - name: Renew temporary credentials before deployment
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+          role-session-name: triage-deploy-${{ github.run_id }}
+          role-duration-seconds: 3600
+          unset-current-credentials: true
+          mask-aws-account-id: true
+      - name: Deploy, verify readiness and contract, or roll back
+        timeout-minutes: 15
+        env:
+          REPOSITORY_URI: ${{ steps.image.outputs.repository_uri }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          TRIAGE_API_TOKEN: ${{ secrets.TRIAGE_API_TOKEN }}
+        run: >-
+          uv run --no-sync python -m scripts.deploy_ecs
+          --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" --container "$ECS_CONTAINER_NAME"
+          --image "$REPOSITORY_URI@$IMAGE_DIGEST" --base-url "$APP_BASE_URL"
+          --timeout-seconds 300 --poll-seconds 5 --report reports/cd/deployment.json
+      - name: Remove smoke container
+        if: ${{ always() }}
+        run: docker rm --force triage-cd-smoke >/dev/null 2>&1 || true
+      - name: Upload technical reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cd-${{ needs.release.outputs.environment }}-${{ needs.release.outputs.sha }}
+          path: |
+            reports/cd/smoke.json
+            reports/cd/vulnerabilities.json
+            reports/cd/deployment.json
+          if-no-files-found: warn
+          retention-days: 14
