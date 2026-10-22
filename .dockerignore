@@ -21,6 +21,16 @@ htmlcov/
 mlruns/
 *.pkl
 models/reports/
+models/registry/
+models/training/
+data/
+reports/
+artifacts/
+logs/
+.airflow-ci/
+.coverage
+.github/
+.release-source/
 data/processed/online_shoppers_processed.npz
 
 # Local env

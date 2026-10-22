@@ -1,9 +1,9 @@
 # Sistema de Triagem Automatica de Laudos
 
-Projeto iniciado conforme o [SDD](SDD.md). Esta entrega cobre a fundacao das Etapas 0 e 1: governanca
+Projeto iniciado conforme o SDD de apoio. Esta entrega cobre a fundacao das Etapas 0 e 1: governanca
 documentada, API FastAPI, contrato versionado, carregamento singleton no startup, health checks,
 abstencao tecnica, container multi-stage e testes do dominio e da API. A Etapa 2 inclui o pipeline
-offline, DVC, DAG Airflow e a configuracao de CI descrita abaixo.
+offline, DVC, DAG Airflow e as configuracoes de CI e CD descritas abaixo.
 
 O artefato atual e uma demonstracao tecnica treinada com texto sintetico. O Medical Abstracts TC
 Corpus nao possui, por si so, labels de urgencia clinica. Nenhum resultado atual deve ser interpretado
@@ -14,11 +14,11 @@ como evidencia de seguranca ou desempenho clinico.
 Requer Python 3.11-3.13 e `uv`.
 
 ```powershell
-uv sync --extra dev
-uv run python scripts/create_demo_model.py
-uv run python scripts/benchmark_baseline.py
-uv run pytest -q tests
-uv run uvicorn triage.api.app:app --host 0.0.0.0 --port 8000
+uv sync --locked --extra dev --extra airflow --python 3.12
+uv run --no-sync python scripts/create_demo_model.py
+uv run --no-sync python scripts/benchmark_baseline.py
+uv run --no-sync pytest -q tests
+uv run --no-sync uvicorn triage.api.app:app --host 0.0.0.0 --port 8000
 ```
 
 A API fica em `http://localhost:8000`. O contrato completo esta em
@@ -107,11 +107,27 @@ sao limitados aos relatorios explicitamente listados no workflow. Comandos locai
 atualizacao do contrato e passos para exigir o gate na branch estao em [docs/ci.md](docs/ci.md).
 
 A configuracao esta versionada; uma execucao verde no GitHub Actions e a protecao de branch ainda
-precisam ser confirmadas no repositorio remoto. O checklist [TODO.md](TODO.md) distingue essas
-pendencias da implementacao local.
+precisam ser confirmadas no repositorio remoto.
+
+## Entrega continua
+
+O workflow [`.github/workflows/cd.yml`](.github/workflows/cd.yml) verifica a CI do commit exato da
+`main`, constroi ou reutiliza sua imagem imutavel, executa smoke test e scan de vulnerabilidades,
+publica no ECR via OIDC e atualiza um servico ECS/Fargate existente por digest. A implantacao
+confere a revisao ativa, o JSON de readiness e o contrato HTTP; falhas restauram o digest anterior.
+
+Os ambientes `dev`, `staging` e `production` possuem configuracoes separadas. O automatico em
+`dev` depende da variavel de repositorio `CD_ENABLED=true`; os demais podem ser promovidos por
+`workflow_dispatch`. Production exige uma tag de release do mesmo commit e deve ter aprovadores
+configurados no GitHub Environment. Todas as imagens deste fluxo usam somente o modelo sintetico.
+
+Configure os recursos AWS, roles e environments conforme [docs/cd.md](docs/cd.md); os templates
+parametrizaveis estao em [`infra/aws/`](infra/aws/). Build e deploy reais ainda precisam ser validados
+com Docker e com uma conta AWS configurada. A entrega local valida a automacao com testes HTTP e
+simulacoes das respostas AWS, sem provisionar recursos.
 
 ## Proximos bloqueios
 
 Antes de qualquer uso hospitalar, ainda sao necessarios governanca clinica, dataset rotulado por
-especialistas, desidentificacao aprovada, protecao de branch com CI obrigatoria, CD,
-observabilidade Prometheus/Grafana e comparacao de inferencia ONNX conforme [TODO](TODO.md).
+especialistas, desidentificacao aprovada, protecao de branch com CI obrigatoria, configuracao e
+validacao do deploy AWS, observabilidade Prometheus/Grafana e comparacao de inferencia ONNX.

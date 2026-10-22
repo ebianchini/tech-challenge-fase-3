@@ -1,0 +1,46 @@
+{
+  "family": "__TASK_FAMILY__",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::__AWS_ACCOUNT_ID__:role/__EXECUTION_ROLE_NAME__",
+  "taskRoleArn": "arn:aws:iam::__AWS_ACCOUNT_ID__:role/__TASK_ROLE_NAME__",
+  "runtimePlatform": {"cpuArchitecture": "X86_64", "operatingSystemFamily": "LINUX"},
+  "containerDefinitions": [
+    {
+      "name": "__ECS_CONTAINER_NAME__",
+      "image": "__AWS_ACCOUNT_ID__.dkr.ecr.__AWS_REGION__.amazonaws.com/__ECR_REPOSITORY__@sha256:__IMAGE_DIGEST_HEX__",
+      "essential": true,
+      "user": "app",
+      "readonlyRootFilesystem": true,
+      "linuxParameters": {"capabilities": {"drop": ["ALL"]}},
+      "portMappings": [{"containerPort": 8000, "protocol": "tcp", "appProtocol": "http"}],
+      "environment": [
+        {"name": "TRIAGE_ROOT_DIR", "value": "/app"},
+        {"name": "PYTHONDONTWRITEBYTECODE", "value": "1"},
+        {"name": "PYTHONUNBUFFERED", "value": "1"}
+      ],
+      "healthCheck": {
+        "command": [
+          "CMD",
+          "python",
+          "-c",
+          "import json,urllib.request; r=json.load(urllib.request.urlopen('http://127.0.0.1:8000/health/ready',timeout=3)); assert r.get('status')=='ok' and r.get('contract_version')=='1.0' and r.get('model_loaded') is True and r.get('preprocessor_loaded') is True"
+        ],
+        "interval": 15,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 30
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/__ENVIRONMENT__/triage",
+          "awslogs-region": "__AWS_REGION__",
+          "awslogs-stream-prefix": "api"
+        }
+      }
+    }
+  ]
+}

@@ -29,7 +29,7 @@ nao deve ser instalado como parte destas instrucoes em Windows nativo.
 uv sync --locked --extra dev --extra airflow
 uv run --no-sync ruff check src tests scripts dags
 uv run --no-sync python scripts/create_demo_model.py
-uv run --no-sync pytest -q tests --cov=triage --cov-report=term-missing --cov-report=xml:reports/ci/coverage.xml --cov-report=html:reports/ci/coverage-html --junitxml=reports/ci/junit.xml
+uv run --no-sync pytest -q tests --cov=triage --cov=scripts --cov-report=term-missing --cov-report=xml:reports/ci/coverage.xml --cov-report=html:reports/ci/coverage-html --junitxml=reports/ci/junit.xml
 uv run --no-sync python scripts/validate_dag.py --output reports/ci/dag-validation.json
 uv run --no-sync python scripts/validate_openapi.py --output reports/ci/openapi.json
 ```
@@ -42,7 +42,7 @@ Os jobs `lint` e `openapi` precisam somente de `uv sync --locked --extra dev`; p
 reproduzidos em Windows com Python suportado. Os jobs `tests` e `dag` usam ambos os extras
 no runner Linux. O modelo sintetico precisa ser gerado antes de executar a suite de testes.
 
-## Validacao local desta entrega
+## Validacao local inicial da CI
 
 Em 22/10/2026, com Python 3.12.15 e as dependencias do lockfile, foram verificados:
 
@@ -53,7 +53,9 @@ Em 22/10/2026, com Python 3.12.15 e as dependencias do lockfile, foram verificad
 - Workflow: sintaxe e expressoes aprovadas pelo actionlint 1.7.12.
 - Lockfile: `uv lock --check` aprovado.
 
-Essas verificacoes foram locais em Windows. A execucao no runner Linux do GitHub Actions e
+Essas verificacoes da entrega inicial foram locais em Windows. A entrega posterior de CD
+amplia a cobertura para os scripts; veja os resultados atuais em [cd.md](cd.md).
+A execucao no runner Linux do GitHub Actions e
 os uploads remotos ainda precisam ser confirmados apos publicar o workflow.
 
 ## Artefatos e privacidade
@@ -114,4 +116,4 @@ Depois de publicar a alteracao no GitHub:
    e o Definition of Done continuam pendentes ate as verificacoes remotas correspondentes.
 
 Esses passos seguem a [documentacao de protecao de branches do GitHub](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/managing-a-branch-protection-rule).
-CD, build/publicacao de imagem e deploy permanecem fora desta entrega.
+O workflow separado de CD, build/publicacao de imagem e deploy esta descrito em [cd.md](cd.md).

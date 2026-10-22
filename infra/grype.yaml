@@ -1,0 +1,2 @@
+# Keep the vulnerability gate explicit; no ignored CVEs or implicit local config.
+check-for-app-update: false
