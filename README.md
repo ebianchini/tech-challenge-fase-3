@@ -3,9 +3,9 @@
 Projeto iniciado conforme o SDD de apoio. Esta entrega cobre a fundacao das Etapas 0 e 1: governanca
 documentada, API FastAPI, contrato versionado, carregamento singleton no startup, health checks,
 abstencao tecnica, container multi-stage e testes do dominio e da API. A Etapa 2 inclui o pipeline
-offline, DVC, DAG Airflow e as configuracoes de CI e CD descritas abaixo. O item Prometheus da
-Etapa 3 adiciona instrumentacao da API, exposicao de metricas em `GET /metrics` e servidor
-Prometheus local com coleta, alertas e retencao.
+offline, DVC, DAG Airflow e as configuracoes de CI e CD descritas abaixo. A Etapa 3 adiciona
+instrumentacao da API, exposicao de metricas em `GET /metrics`, servidor Prometheus local com
+coleta, alertas e retencao e dashboard Grafana provisionado por arquivos.
 
 O artefato atual e uma demonstracao tecnica treinada com texto sintetico. O Medical Abstracts TC
 Corpus nao possui, por si so, labels de urgencia clinica. Nenhum resultado atual deve ser interpretado
@@ -52,20 +52,28 @@ docker run --rm -p 8000:8000 triage-laudos:dev
 
 Endpoints: `GET /health/live`, `GET /health/ready`, `POST /v1/triage` e `GET /metrics`.
 
-Para executar a API com Prometheus local, gere o modelo sintetico antes do build:
+Para executar a API com Prometheus e Grafana locais, gere o modelo sintetico antes do build:
 
 ```powershell
 uv sync --locked --extra dev
 uv run --no-sync python scripts/create_demo_model.py
-docker compose up -d --build api prometheus
+docker compose up -d --build api prometheus grafana
 ```
 
-Esse comando inicia somente esses dois servicos, sem Airflow. A API fica em
-`http://127.0.0.1:8000` e o Prometheus em `http://127.0.0.1:9090`. A coleta usa a rede bridge dedicada
-`observability`; as portas do host escutam somente em loopback. O historico e persistido no volume
-`prometheus-data`, com retencao de 7 dias ou 1 GB, conforme o primeiro limite atingido. Reserve
-pelo menos 2 GB para o volume; o limite da TSDB nao e uma quota rigida de disco. Instrucoes de
-verificacao, alertas e operacao estao em [docs/prometheus-local.md](docs/prometheus-local.md).
+Esse comando inicia somente esses tres servicos, sem Airflow. A API fica em
+`http://127.0.0.1:8000`, o Prometheus em `http://127.0.0.1:9090` e o Grafana em
+`http://127.0.0.1:3000`. No Grafana, entre com **`admin` / `triage-local-demo`**, credenciais
+exclusivas desta demonstracao local, e abra **Dashboards > Triage > Triagem | operação do protótipo sintético**.
+O datasource e o dashboard sao provisionados automaticamente, sem importacao manual.
+
+A stack usa a rede bridge dedicada `observability`; as portas do host escutam somente em
+loopback. O historico Prometheus fica em `prometheus-data`, com retencao de 7 dias ou 1 GB,
+conforme o primeiro limite atingido. Reserve pelo menos 2 GB para esse volume; o limite da TSDB
+nao e uma quota rigida de disco. O Grafana persiste seu banco em `grafana-data`. Instrucoes de
+verificacao, alertas e operacao estao em [docs/prometheus-local.md](docs/prometheus-local.md) e
+[docs/grafana-local.md](docs/grafana-local.md). Para subir somente API e coletor, omita `grafana`
+do comando. A [captura do dashboard](docs/images/grafana-triage-overview.png) mostra os nove
+paineis com trafego sintetico; a evidencia e os limites de validacao estao no guia Grafana.
 
 ## Pipeline de dados, modelo e DVC
 
@@ -117,7 +125,7 @@ imutável e só ocorre após o quality gate. Para modelo clínico, também exige
 O workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) executa em todo push e pull request,
 com Python 3.12 e dependencias de `uv.lock`. Os jobs verificam Ruff, Pytest com cobertura, sintaxe e
 carregamento da DAG pelo Airflow real, contrato OpenAPI contra um baseline versionado e configuracao
-do Compose/Prometheus com testes das regras de alerta. O gate
+do Compose/Prometheus com testes das regras de alerta e smoke da stack com Grafana. O gate
 final **`CI required`** exige sucesso de todas essas verificacoes.
 
 A CI usa somente fixtures e modelos sinteticos, sem baixar datasets ou publicar modelos. Os uploads
@@ -157,11 +165,12 @@ restrinja seu acesso a rede de observabilidade e nao o inclua nas rotas publicas
 
 Consulte [docs/metrics.md](docs/metrics.md) para unidades, contagem de lotes, labels e limites; veja
 [docs/prometheus-local.md](docs/prometheus-local.md) para coleta, alertas, retencao e verificacao
-do servidor local. Os alertas ficam na UI/API do Prometheus, sem envio de notificacoes. Grafana e
-seu provisionamento permanecem nos proximos itens da Etapa 3.
+do servidor local. Os alertas ficam na UI/API do Prometheus, sem envio de notificacoes.
+O dashboard Grafana inclui requisicoes, latencia, erros de triagem e HTTP 5xx, predicoes, abstencao e readiness;
+veja [docs/grafana-local.md](docs/grafana-local.md) para consultas e verificacao do provisionamento.
 
 ## Proximos bloqueios
 
 Antes de qualquer uso hospitalar, ainda sao necessarios governanca clinica, dataset rotulado por
 especialistas, desidentificacao aprovada, protecao de branch com CI obrigatoria, configuracao e
-validacao do deploy AWS, validacao da stack local em Docker, Grafana e comparacao de inferencia ONNX.
+validacao do deploy AWS, validacao da stack local em Docker e comparacao de inferencia ONNX.

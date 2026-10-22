@@ -24,13 +24,17 @@ antes do build. Esses artefatos sao sinteticos e nao constituem um modelo clinic
 O comando explicita os servicos `api` e `prometheus`, sem iniciar os servicos Airflow/Postgres
 existentes no mesmo Compose. A API usa um worker por container.
 
+Para incluir o dashboard Grafana ja provisionado, acrescente `grafana` ao comando:
+`docker compose up -d --build api prometheus grafana`. O acesso fica em
+`http://127.0.0.1:3000`; credenciais locais e detalhes estao em [grafana-local.md](grafana-local.md).
+
 | Componente | Acesso local | Configuracao |
 | --- | --- | --- |
 | API | `http://127.0.0.1:8000` | Build pelo Dockerfile da raiz; readiness em `/health/ready`. |
 | Prometheus | `http://127.0.0.1:9090` | Imagem `prom/prometheus:v3.13.3`; dados em `/prometheus`. |
 | Scrape | Interno ao Compose | Job `triage-api`, alvo `api:8000`, caminho `/metrics`, HTTP. |
 
-API e Prometheus compartilham somente a rede bridge dedicada `observability`, isolada da rede usada
+API, Prometheus e o Grafana opcional compartilham a rede bridge dedicada `observability`, isolada da rede usada
 pelo Airflow. As portas publicadas escutam somente em `127.0.0.1`. A API nao autentica `/metrics`,
 que continua acessivel ao usuario local pela porta 8000; essa configuracao e de desenvolvimento.
 O coletor nao usa `localhost:8000`, pois isso apontaria para o proprio container Prometheus.
@@ -100,8 +104,9 @@ Consulte as regras e seus estados em `http://127.0.0.1:9090/alerts` ou pela API:
 (Invoke-RestMethod http://127.0.0.1:9090/api/v1/alerts).data.alerts
 ```
 
-Nao ha Alertmanager nem envio de notificacoes nesta entrega. Grafana e seu provisionamento
-pertencem ao item seguinte. Para verificar indisponibilidade manualmente no ambiente local,
+Nao ha Alertmanager nem envio de notificacoes nesta entrega. O dashboard Grafana consulta as
+mesmas metricas por datasource provisionado; os alertas continuam definidos no Prometheus.
+Para verificar indisponibilidade manualmente no ambiente local,
 pare somente a API com `docker compose stop api`, aguarde o periodo da regra e confira
 `TriageAPIDown`; depois recupere com `docker compose start api`. Erro, latencia, abstencao e
 readiness possuem cenarios sinteticos no teste das regras, sem alterar o comportamento da API.
@@ -131,8 +136,9 @@ Para encerrar apenas esta stack sem apagar o historico:
 docker compose stop api prometheus
 ```
 
-Evite `docker compose down -v` como rotina: ele apaga os volumes deste projeto, inclusive o
-historico Prometheus e o banco Postgres do Airflow.
+Se tambem iniciou o dashboard, inclua `grafana` no comando de parada. Evite
+`docker compose down -v` como rotina: ele apaga os volumes deste projeto, inclusive o
+historico Prometheus e os bancos do Grafana e do Postgres do Airflow.
 
 ## Validar e atualizar a configuracao
 

@@ -4,7 +4,8 @@ O item Prometheus da Etapa 3 instrumenta a aplicacao com `prometheus-client` e e
 O endpoint esta descrito no OpenAPI e devolve somente metricas tecnicas no formato de exposicao
 Prometheus; a inclusao aditiva preserva a versao `1.0` do contrato de inferencia. A coleta por um
 servidor local, sua retencao e regras de alerta estao descritas em
-[prometheus-local.md](prometheus-local.md). Grafana e seu provisionamento permanecem pendentes.
+[prometheus-local.md](prometheus-local.md). O dashboard provisionado e descrito em
+[grafana-local.md](grafana-local.md).
 
 ## Execucao e verificacao local
 

@@ -1,0 +1,15 @@
+apiVersion: 1
+
+providers:
+  - name: triage-overview
+    orgId: 1
+    folder: Triage
+    folderUid: triage
+    type: file
+    disableDeletion: false
+    allowUiUpdates: false
+    # Poll bind mounts; filesystem events may not propagate through Docker Desktop.
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
+

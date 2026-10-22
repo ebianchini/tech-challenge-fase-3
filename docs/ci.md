@@ -15,7 +15,7 @@ do repositorio.
 | `tests` | Geracao do modelo sintetico e Pytest com cobertura e relatorio JUnit; inclui os testes de Airflow com as dependencias reais instaladas. |
 | `dag` | Compilacao dos arquivos Python, importacao pelo `DagBag` real do Airflow e verificacao da estrutura de `triage_retrain`, sem executar tasks. |
 | `openapi` | Validacao formal da especificacao e comparacao dos contratos existentes com o baseline [openapi-contract.json](openapi-contract.json). |
-| `monitoring` | Validacao do Compose, configuracao Prometheus e cenarios sinteticos das regras com o `promtool` da imagem `prom/prometheus:v3.13.3`. |
+| `monitoring` | Validacao do Compose, configuracao Prometheus e testes das regras com `promtool` 3.13.3; build da API sintetica e smoke da stack API/Prometheus/Grafana 13.2.4, incluindo datasource, dashboard e consultas. |
 | `CI required` | Gate final: exige sucesso de `lint`, `tests`, `dag`, `openapi` e `monitoring`; falha se algum desses jobs falhar, for cancelado ou pulado. |
 
 O nome literal do status obrigatorio e **`CI required`**. Mantenha esse nome estavel ao editar
@@ -44,18 +44,33 @@ Os jobs `lint` e `openapi` precisam somente de `uv sync --locked --extra dev`; p
 reproduzidos em Windows com Python suportado. Os jobs `tests` e `dag` usam ambos os extras
 no runner Linux. O modelo sintetico precisa ser gerado antes de executar a suite de testes.
 
-O job `monitoring` usa Docker/Compose e o `promtool` da imagem fixada, sem executar a API,
-Airflow ou coleta de dados. Reproduza a partir da raiz do repositorio:
+O job `monitoring` usa Docker/Compose e o `promtool` da imagem fixada para validar configuracao
+e cenarios de alerta. Depois constroi a API com modelo sintetico, sobe API/Prometheus/Grafana,
+aguarda os healthchecks e verifica o provisionamento e as consultas via
+[scripts/check_grafana.py](../scripts/check_grafana.py). Nao sobe Airflow nem acessa datasets.
+Reproduza a partir da raiz do repositorio:
 
 ```powershell
 docker compose config --quiet
 docker compose run --rm --no-deps --entrypoint /bin/promtool prometheus check config /etc/prometheus/prometheus.yml
 docker compose run --rm --no-deps --entrypoint /bin/promtool prometheus test rules /etc/prometheus/alerts.test.yml
+uv sync --locked --extra dev
+uv run --no-sync python scripts/create_demo_model.py
+docker compose up -d --build --wait --wait-timeout 180 api prometheus grafana
+uv run --no-sync python scripts/check_grafana.py --output reports/ci/grafana-smoke.json
 ```
 
 Os cenarios verificam disparo e recuperacao, limites, periodos `for`, falta de trafego,
-readiness e isolamento por alvo/versao de modelo. A verificacao integrada da stack esta em
-[prometheus-local.md](prometheus-local.md).
+readiness e isolamento por alvo/versao de modelo. A suite Pytest inclui testes do checker
+Grafana, com respostas HTTP sinteticas. Para o smoke, as credenciais sao lidas de
+`GRAFANA_ADMIN_USER` e `GRAFANA_ADMIN_PASSWORD`, com os mesmos defaults da demonstracao local.
+O checker distingue a URL local do Grafana da URL interna `http://prometheus:9090` do datasource.
+Operacao e verificacao da stack estao em [prometheus-local.md](prometheus-local.md) e
+[grafana-local.md](grafana-local.md).
+
+O runner descartavel encerra a stack e remove seus volumes ao final, inclusive em falha. Na
+maquina de desenvolvimento, prefira `docker compose stop api prometheus grafana` para preservar
+o historico. O smoke configurado na CI ainda precisa ser confirmado no GitHub Actions.
 
 ## Validacao local inicial da CI
 
@@ -82,6 +97,7 @@ Os uploads usam somente os caminhos abaixo, com retencao de 14 dias:
 | `tests` | `reports/ci/coverage.xml`, `reports/ci/coverage-html/`, `reports/ci/junit.xml` | Cobertura do codigo e resultados dos testes com fixtures sinteticas. |
 | `dag` | `reports/ci/dag-validation.json` | Identificador da DAG, estrutura das tasks e resultado das validacoes. |
 | `openapi` | `reports/ci/openapi.json` | Especificacao HTTP gerada, sem exemplos de dados reais. |
+| `monitoring` | `reports/ci/grafana-smoke.json` | Resultado tecnico do provisionamento e das consultas, sem credenciais ou textos de entrada. |
 
 A CI nao executa `dvc pull`, nao acessa corpus hospitalar e nao precisa de credenciais AWS
 ou acesso a servicos externos de dados. Modelos, datasets, logs Airflow e o diretorio inteiro
