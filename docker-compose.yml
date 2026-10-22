@@ -33,6 +33,62 @@ x-airflow-common: &airflow-common
       condition: service_healthy
 
 services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: triage-laudos:local
+    ports:
+      - "127.0.0.1:8000:8000"
+    networks:
+      - observability
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.13.3
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --storage.tsdb.retention.size=1GB
+      - --web.listen-address=0.0.0.0:9090
+    volumes:
+      - type: bind
+        source: ./monitoring/prometheus
+        target: /etc/prometheus
+        read_only: true
+        bind:
+          create_host_path: false
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    networks:
+      - observability
+    depends_on:
+      api:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "/bin/promtool", "check", "ready", "--url=http://127.0.0.1:9090"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
   postgres:
     image: postgres:16-alpine
     environment:
@@ -83,3 +139,8 @@ services:
 
 volumes:
   postgres-db-volume:
+  prometheus-data:
+
+networks:
+  observability:
+    driver: bridge

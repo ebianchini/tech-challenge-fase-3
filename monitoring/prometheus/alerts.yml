@@ -1,0 +1,92 @@
+groups:
+  - name: triage-local
+    rules:
+      # Initial operational thresholds for the synthetic local demo, not clinical gates.
+      # Preserve job/instance so traffic on another target cannot hide a failure.
+      - alert: TriageAPIHighErrorRate
+        expr: |
+          (
+            sum by (job, instance) (
+              rate(triage_http_requests_total{job="triage-api",method="POST",route="/v1/triage",status=~"5.."}[5m])
+            )
+            /
+            sum by (job, instance) (
+              rate(triage_http_requests_total{job="triage-api",method="POST",route="/v1/triage"}[5m])
+            )
+          ) > 0.05
+          and on (job, instance)
+          sum by (job, instance) (
+            rate(triage_http_requests_total{job="triage-api",method="POST",route="/v1/triage"}[5m])
+          ) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Taxa de erros HTTP 5xx da triagem acima de 5%
+          description: "{{ $labels.instance }}: mais de 5% de respostas 5xx em POST /v1/triage na janela de 5m, por 2m. Verifique a API e o modelo."
+
+      - alert: TriageAPIHighLatency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (job, instance, le) (
+              rate(triage_http_request_duration_seconds_bucket{job="triage-api",method="POST",route="/v1/triage"}[5m])
+            )
+          ) > 0.1
+          and on (job, instance)
+          sum by (job, instance) (
+            rate(triage_http_request_duration_seconds_count{job="triage-api",method="POST",route="/v1/triage"}[5m])
+          ) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Latencia HTTP p95 da triagem acima de 100 ms
+          description: "{{ $labels.instance }}: p95 de POST /v1/triage acima de 0.1s na janela de 5m, por 2m. Verifique carga e latencia de inferencia."
+
+      - alert: TriageAPIDown
+        expr: up{job="triage-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: API de triagem indisponivel para coleta
+          description: "{{ $labels.instance }}: scrape de /metrics falha por 1m. Verifique processo, rede e alvo do Prometheus."
+
+      # begin_model leaves unknown=0 alongside the loaded version=1. A max avoids
+      # false alarms; unless also catches a missing readiness family while up=1.
+      - alert: TriageModelNotReady
+        expr: |
+          (up{job="triage-api"} == 1)
+          unless on (job, instance)
+          (max by (job, instance) (triage_model_ready{job="triage-api"}) == 1)
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Modelo de triagem indisponivel apesar da API acessivel
+          description: "{{ $labels.instance }}: /metrics responde, mas readiness do modelo esta zero ou ausente por 1m. Verifique artefato e preprocessador."
+
+      # Both counters count results, including abstentions. A batch is one HTTP
+      # request but up to 32 predictions; never use HTTP traffic as denominator.
+      - alert: TriageHighAbstentionRate
+        expr: |
+          (
+            sum by (job, instance, model_version) (
+              rate(triage_abstentions_total{job="triage-api"}[5m])
+            )
+            /
+            sum by (job, instance, model_version) (
+              rate(triage_predictions_total{job="triage-api"}[5m])
+            )
+          ) > 0.20
+          and on (job, instance, model_version)
+          sum by (job, instance, model_version) (
+            rate(triage_predictions_total{job="triage-api"}[5m])
+          ) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Taxa de abstencao da triagem acima de 20%
+          description: "{{ $labels.instance }} / {{ $labels.model_version }}: mais de 20% dos resultados com abstencao na janela de 5m, por 5m. Verifique distribuicao de entrada e necessidade de revisao humana."
