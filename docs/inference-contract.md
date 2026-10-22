@@ -47,3 +47,10 @@ tecnico e deve encaminhar o caso para revisao humana.
 - Erros de schema usam `INVALID_INPUT_SCHEMA`; indisponibilidade de artefatos usa
   `MODEL_UNAVAILABLE`; falha de inferencia usa `INFERENCE_FAILED`.
 - Respostas de erro nao incluem payload, texto, stack trace ou caminho local.
+
+## Metricas
+
+`GET /metrics` retorna texto no formato Prometheus, com o `Content-Type` fornecido pelo
+cliente oficial. Essa adicao preserva o contrato de triagem `1.0`; o baseline OpenAPI
+versionado inclui a rota de observabilidade. Unidades, labels e contagem de lotes estao em
+[metrics.md](metrics.md). Restrinja o acesso ao coletor na rede/gateway do ambiente.
