@@ -33,6 +33,8 @@ dist/
 .coverage
 .pytest_cache/
 .ruff_cache/
+reports/ci/
+.airflow-ci/
 
 # OS
 .DS_Store

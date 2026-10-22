@@ -1,0 +1,144 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_NO_PROGRESS: "1"
+  PYTHONDONTWRITEBYTECODE: "1"
+  AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+  AIRFLOW__CORE__LOAD_DEFAULT_CONNECTIONS: "false"
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.13.4"
+          python-version: "3.12.15"
+          enable-cache: true
+      - run: uv sync --locked --extra dev
+      - run: uv run --no-sync ruff check --output-format=github src tests scripts dags
+
+  tests:
+    name: Tests and coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      AIRFLOW_HOME: ${{ github.workspace }}/.airflow-ci
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.13.4"
+          python-version: "3.12.15"
+          enable-cache: true
+      - run: uv sync --locked --extra dev --extra airflow
+      - name: Create synthetic demo model
+        run: uv run --no-sync python scripts/create_demo_model.py
+      - name: Run tests with coverage
+        run: >-
+          uv run --no-sync pytest -q tests
+          --cov=triage --cov-report=term-missing
+          --cov-report=xml:reports/ci/coverage.xml
+          --cov-report=html:reports/ci/coverage-html
+          --junitxml=reports/ci/junit.xml
+      - name: Upload test reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-reports
+          path: |
+            reports/ci/coverage.xml
+            reports/ci/coverage-html/
+            reports/ci/junit.xml
+          if-no-files-found: error
+          retention-days: 14
+
+  dag:
+    name: Airflow DAG
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      AIRFLOW_HOME: ${{ github.workspace }}/.airflow-ci
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.13.4"
+          python-version: "3.12.15"
+          enable-cache: true
+      - run: uv sync --locked --extra dev --extra airflow
+      - name: Compile and load DAG without running tasks
+        run: uv run --no-sync python scripts/validate_dag.py --output reports/ci/dag-validation.json
+      - name: Upload DAG validation
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dag-validation
+          path: reports/ci/dag-validation.json
+          if-no-files-found: error
+          retention-days: 14
+
+  openapi:
+    name: OpenAPI contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.13.4"
+          python-version: "3.12.15"
+          enable-cache: true
+      - run: uv sync --locked --extra dev
+      - name: Validate OpenAPI and contract compatibility
+        run: uv run --no-sync python scripts/validate_openapi.py --output reports/ci/openapi.json
+      - name: Upload OpenAPI schema
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: openapi-contract
+          path: reports/ci/openapi.json
+          if-no-files-found: error
+          retention-days: 14
+
+  required:
+    name: CI required
+    if: ${{ always() }}
+    needs: [lint, tests, dag, openapi]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      LINT_RESULT: ${{ needs.lint.result }}
+      TESTS_RESULT: ${{ needs.tests.result }}
+      DAG_RESULT: ${{ needs.dag.result }}
+      OPENAPI_RESULT: ${{ needs.openapi.result }}
+    steps:
+      - name: Require all checks to succeed
+        run: |
+          for result in "$LINT_RESULT" "$TESTS_RESULT" "$DAG_RESULT" "$OPENAPI_RESULT"; do
+            if [ "$result" != "success" ]; then
+              echo "CI failed: a required job failed, was cancelled, or was skipped."
+              exit 1
+            fi
+          done

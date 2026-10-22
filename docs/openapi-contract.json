@@ -1,0 +1,344 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Triage de Laudos API",
+    "description": "API tecnica de triagem, sem decisao clinica autonoma.",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health/live": {
+      "get": {
+        "summary": "Live",
+        "operationId": "live_health_live_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Live Health Live Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "summary": "Ready",
+        "operationId": "ready_health_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/triage": {
+      "post": {
+        "summary": "Triage",
+        "operationId": "triage_v1_triage_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TriageBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TriageBatchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Payload de triagem invalido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Falha durante a inferencia.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Modelo de inferencia indisponivel.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ErrorBody": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "INVALID_INPUT_SCHEMA",
+              "MODEL_UNAVAILABLE",
+              "INFERENCE_FAILED"
+            ],
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "details": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationErrorDetail"
+            },
+            "type": "array",
+            "title": "Details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "details"
+        ],
+        "title": "ErrorBody"
+      },
+      "ErrorResponse": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorBody"
+          }
+        },
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "title": "ErrorResponse"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "contract_version": {
+            "type": "string",
+            "title": "Contract Version"
+          },
+          "model_loaded": {
+            "type": "boolean",
+            "title": "Model Loaded"
+          },
+          "preprocessor_loaded": {
+            "type": "boolean",
+            "title": "Preprocessor Loaded"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "contract_version",
+          "model_loaded",
+          "preprocessor_loaded"
+        ],
+        "title": "HealthResponse"
+      },
+      "TriageBatchRequest": {
+        "properties": {
+          "contract_version": {
+            "type": "string",
+            "pattern": "^1\\.0$",
+            "title": "Contract Version",
+            "default": "1.0"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          },
+          "instances": {
+            "items": {
+              "$ref": "#/components/schemas/TriageRequest"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Instances"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "instances"
+        ],
+        "title": "TriageBatchRequest"
+      },
+      "TriageBatchResponse": {
+        "properties": {
+          "contract_version": {
+            "type": "string",
+            "title": "Contract Version"
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "model_version": {
+            "type": "string",
+            "title": "Model Version"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/TriageResult"
+            },
+            "type": "array",
+            "title": "Results"
+          }
+        },
+        "type": "object",
+        "required": [
+          "contract_version",
+          "request_id",
+          "model_version",
+          "results"
+        ],
+        "title": "TriageBatchResponse"
+      },
+      "TriageClass": {
+        "type": "string",
+        "enum": [
+          "normal",
+          "atencao",
+          "urgente"
+        ],
+        "title": "TriageClass"
+      },
+      "TriageRequest": {
+        "properties": {
+          "report_text": {
+            "type": "string",
+            "maxLength": 10000,
+            "minLength": 1,
+            "title": "Report Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "report_text"
+        ],
+        "title": "TriageRequest"
+      },
+      "TriageResult": {
+        "properties": {
+          "prediction_id": {
+            "type": "string",
+            "title": "Prediction Id"
+          },
+          "triage_class": {
+            "$ref": "#/components/schemas/TriageClass"
+          },
+          "probabilities": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/TriageClass"
+            },
+            "type": "object",
+            "title": "Probabilities"
+          },
+          "abstained": {
+            "type": "boolean",
+            "title": "Abstained"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "prediction_id",
+          "triage_class",
+          "probabilities",
+          "abstained"
+        ],
+        "title": "TriageResult"
+      },
+      "ValidationErrorDetail": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Loc"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationErrorDetail"
+      }
+    }
+  }
+}

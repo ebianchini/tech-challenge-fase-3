@@ -4,6 +4,7 @@ import os
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
@@ -54,6 +55,22 @@ class HealthResponse(BaseModel):
     contract_version: str
     model_loaded: bool
     preprocessor_loaded: bool
+
+
+class ValidationErrorDetail(BaseModel):
+    loc: list[str | int]
+    msg: str
+    type: str
+
+
+class ErrorBody(BaseModel):
+    code: Literal["INVALID_INPUT_SCHEMA", "MODEL_UNAVAILABLE", "INFERENCE_FAILED"]
+    message: str
+    details: list[ValidationErrorDetail]
+
+
+class ErrorResponse(BaseModel):
+    error: ErrorBody
 
 
 def error_response(code: str, message: str, http_status: int, details: list[object] | None = None):
@@ -130,7 +147,14 @@ def create_app() -> FastAPI:
             preprocessor_loaded=preprocessor_loaded,
         )
 
-    @app.post("/v1/triage")
+    @app.post(
+        "/v1/triage",
+        responses={
+            422: {"model": ErrorResponse, "description": "Payload de triagem invalido."},
+            500: {"model": ErrorResponse, "description": "Falha durante a inferencia."},
+            503: {"model": ErrorResponse, "description": "Modelo de inferencia indisponivel."},
+        },
+    )
     def triage(payload: TriageBatchRequest) -> TriageBatchResponse:
         predictor = state["predictor"]
         if predictor is None:
