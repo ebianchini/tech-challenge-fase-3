@@ -1,3 +1,3 @@
-from .model_loader import ModelLoadError, SklearnPredictor
+from .model_loader import ModelLoadError, ONNXPredictor, SklearnPredictor
 
-__all__ = ["ModelLoadError", "SklearnPredictor"]
+__all__ = ["ModelLoadError", "ONNXPredictor", "SklearnPredictor"]

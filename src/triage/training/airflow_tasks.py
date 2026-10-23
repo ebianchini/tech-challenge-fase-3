@@ -132,7 +132,9 @@ def export_onnx(run_dir: str | Path) -> dict[str, Any]:
         ) from exc
 
     root = Path(run_dir)
-    model = joblib.load(root / "model" / "pipeline.joblib")
+    model_path = root / "model" / "pipeline.joblib"
+    metadata_path = root / "model" / "metadata.json"
+    model = joblib.load(model_path)
     onnx_model = convert_sklearn(
         model,
         initial_types=[("text", StringTensorType([None, 1]))],
@@ -140,11 +142,55 @@ def export_onnx(run_dir: str | Path) -> dict[str, Any]:
     )
     output = root / "model" / "pipeline.onnx"
     output.write_bytes(onnx_model.SerializeToString())
+    metadata = _read_json(metadata_path)
+    input_name = onnx_model.graph.input[0].name
+    output_names = [output_value.name for output_value in onnx_model.graph.output]
+    metadata.update(
+        {
+            "onnx_sha256": _sha256(output),
+            "onnx_input_name": input_name,
+            "onnx_output_names": output_names,
+            "onnx_probability_tolerance": 1e-5,
+            "onnx_equivalence": _validate_onnx_equivalence(model, output),
+        }
+    )
+    _write_json(metadata_path, metadata)
+    _write_json(root / "model" / "model_metadata.json", metadata)
     return {
         "path": str(output),
         "sha256": _sha256(output),
         "size_bytes": output.stat().st_size,
+        "equivalence": metadata["onnx_equivalence"],
     }
+
+
+def _validate_onnx_equivalence(model: Any, onnx_path: Path) -> dict[str, Any]:
+    try:
+        import numpy as np
+        import onnxruntime as ort
+
+        texts = ["synthetic normal", "synthetic attention", "synthetic urgent"]
+        expected_labels = [str(value) for value in model.predict(texts)]
+        expected_probabilities = model.predict_proba(texts)
+        session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
+        input_name = session.get_inputs()[0].name
+        outputs = session.run(None, {input_name: np.asarray(texts, dtype=object).reshape(-1, 1)})
+        actual_labels = [str(value) for value in outputs[0]]
+        probability_rows = [
+            [float(row[label]) for label in model.classes_]
+            for row in outputs[1]
+        ]
+        actual_probabilities = np.asarray(probability_rows, dtype=float)
+        class_match = actual_labels == expected_labels
+        probability_delta = float(np.max(np.abs(actual_probabilities - expected_probabilities)))
+        return {
+            "class_match": class_match,
+            "max_probability_delta": probability_delta,
+            "probability_tolerance": 1e-5,
+            "passed": class_match and probability_delta <= 1e-5,
+        }
+    except Exception as exc:
+        raise RuntimeError("Falha ao validar equivalencia sklearn/ONNX.") from exc
 
 
 def benchmark_latency(run_dir: str | Path, *, iterations: int = 100) -> dict[str, Any]:

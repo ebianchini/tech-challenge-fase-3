@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-ARG TRIAGE_MODEL_SOURCE=provided
+ARG TRIAGE_MODEL_SOURCE=demo
 
 FROM python:3.12-slim@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2 AS builder
 
@@ -30,10 +30,21 @@ FROM python:3.12-slim@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:$PATH" \
-    PYTHONPATH="/app"
+    PYTHONPATH="/app" \
+    LANG="en_US.UTF-8" \
+    LC_ALL="en_US.UTF-8" \
+    TRIAGE_ENV="production" \
+    TRIAGE_INFERENCE_BACKEND="onnx"
 
 WORKDIR /app
-RUN groupadd --system app && useradd --system --gid app --home /home/app --create-home app
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y locales \
+    && sed -i '/^# *en_US.UTF-8 UTF-8/s/^# *//' /etc/locale.gen \
+    && locale-gen en_US.UTF-8 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system app \
+    && useradd --system --gid app --home /home/app --create-home app
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /app/src /app/src
 COPY --from=artifacts /app/models /app/models
