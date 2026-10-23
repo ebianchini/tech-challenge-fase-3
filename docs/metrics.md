@@ -14,7 +14,7 @@ Na raiz do repositorio, use o ambiente definido pelo lockfile:
 ```powershell
 uv sync --locked --extra dev --extra airflow
 uv run --no-sync python scripts/create_demo_model.py
-uv run --no-sync uvicorn triage.api.app:app --host 127.0.0.1 --port 8000 --workers 1
+uv run --no-sync uvicorn triage.api.app:app --host 127.0.0.1 --port 8000 --workers 1 --no-access-log --log-config logging/uvicorn.json
 ```
 
 Em outro terminal, consulte readiness, envie somente um exemplo sintetico e leia as metricas:

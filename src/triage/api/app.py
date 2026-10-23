@@ -11,10 +11,12 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.exceptions import HTTPException
 
 from triage.domain.exceptions import InferenceError
 from triage.domain.models import TriageClass, TriageRequest
 from triage.domain.service import TriageService
+from triage.infrastructure.logging import HTTPLoggingMiddleware
 from triage.infrastructure.metrics import HTTPMetricsMiddleware, TriageMetrics
 from triage.infrastructure.model_loader import ModelLoadError, SklearnPredictor
 
@@ -82,8 +84,33 @@ def error_response(code: str, message: str, http_status: int, details: list[obje
 
 
 def validation_details(exc: RequestValidationError) -> list[dict[str, object]]:
+    # Pydantic's msg/ctx may contain exception text, and loc can contain arbitrary
+    # extra-field names. Only schema vocabulary and fixed messages may be returned.
+    messages = {
+        "missing": "Campo obrigatorio.",
+        "extra_forbidden": "Campo extra nao permitido.",
+        "string_type": "Esperada uma string.",
+        "string_too_short": "String abaixo do tamanho minimo.",
+        "string_too_long": "String acima do tamanho maximo.",
+        "string_pattern_mismatch": "Formato de string invalido.",
+        "list_type": "Esperada uma lista.",
+        "too_short": "Quantidade de itens abaixo do minimo.",
+        "too_long": "Quantidade de itens acima do maximo.",
+        "model_attributes_type": "Esperado um objeto.",
+        "model_type": "Esperado um objeto.",
+        "json_invalid": "JSON invalido.",
+        "value_error": "Valor invalido.",
+    }
+    schema_fields = {"body", "contract_version", "request_id", "instances", "report_text"}
     return [
-        {key: error[key] for key in ("loc", "msg", "type") if key in error}
+        {
+            "loc": [
+                part if isinstance(part, int) or part in schema_fields else "extra"
+                for part in error.get("loc", ("body",))
+            ],
+            "msg": messages.get(error["type"], "Valor invalido."),
+            "type": error["type"] if error["type"] in messages else "invalid_input",
+        }
         for error in exc.errors()
     ]
 
@@ -91,10 +118,14 @@ def validation_details(exc: RequestValidationError) -> list[dict[str, object]]:
 class _InstrumentedFastAPI(FastAPI):
     def build_middleware_stack(self):
         # Include ServerErrorMiddleware's response in the HTTP observation too.
-        return HTTPMetricsMiddleware(
-            super().build_middleware_stack(),
-            metrics=self.state.metrics,
+        return HTTPLoggingMiddleware(
+            HTTPMetricsMiddleware(
+                super().build_middleware_stack(),
+                metrics=self.state.metrics,
+                route_templates={route.path for route in self.routes},
+            ),
             route_templates={route.path for route in self.routes},
+            model_version=lambda: self.state.log_model_version,
         )
 
 
@@ -108,6 +139,7 @@ def create_app() -> FastAPI:
         nonlocal metric_model_version
         state.update(predictor=None, load_error=None)
         metric_model_version = metrics.begin_model(None)
+        _app.state.log_model_version = metric_model_version
         try:
             predictor = SklearnPredictor(MODEL_PATH, PREPROCESSOR_PATH)
             state["predictor"] = predictor
@@ -115,6 +147,7 @@ def create_app() -> FastAPI:
             state["load_error"] = exc
         else:
             metric_model_version = metrics.begin_model(predictor.model_version)
+            _app.state.log_model_version = metric_model_version
             metrics.set_model_ready(metric_model_version, True)
         try:
             yield
@@ -129,37 +162,56 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     app.state.metrics = metrics
-
-    @app.middleware("http")
-    async def request_metadata(request: Request, call_next):
-        started = time.perf_counter()
-        request_id = request.headers.get("X-Request-ID", str(uuid4()))
-        response = await call_next(request)
-        response.headers["X-Request-ID"] = request_id
-        response.headers["X-Response-Time-Ms"] = f"{(time.perf_counter() - started) * 1000:.3f}"
-        return response
+    app.state.log_model_version = metric_model_version
 
     @app.exception_handler(RequestValidationError)
-    async def validation_handler(_request: Request, exc: RequestValidationError):
+    async def validation_handler(request: Request, exc: RequestValidationError):
+        request.state.error_type = "INVALID_INPUT_SCHEMA"
         metrics.observe_error("INVALID_INPUT_SCHEMA")
         return error_response(
             "INVALID_INPUT_SCHEMA", "Payload de triagem invalido.", 422, validation_details(exc)
         )
 
     @app.exception_handler(ModelLoadError)
-    async def model_handler(_request: Request, _exc: ModelLoadError):
+    async def model_handler(request: Request, _exc: ModelLoadError):
+        request.state.error_type = "MODEL_UNAVAILABLE"
         metrics.observe_error("MODEL_UNAVAILABLE")
         return error_response("MODEL_UNAVAILABLE", "Modelo de inferencia indisponivel.", 503)
 
     @app.exception_handler(InferenceError)
-    async def inference_handler(_request: Request, _exc: InferenceError):
+    async def inference_handler(request: Request, _exc: InferenceError):
+        request.state.error_type = "INFERENCE_FAILED"
         metrics.observe_error("INFERENCE_FAILED")
         return error_response("INFERENCE_FAILED", "Falha durante a inferencia.", 500)
 
     @app.exception_handler(Exception)
-    async def unexpected_handler(_request: Request, _exc: Exception):
+    async def unexpected_handler(request: Request, _exc: Exception):
+        request.state.error_type = "INFERENCE_FAILED"
         metrics.observe_error("INFERENCE_FAILED")
         return error_response("INFERENCE_FAILED", "Falha durante a inferencia.", 500)
+
+    @app.exception_handler(HTTPException)
+    async def http_handler(_request: Request, exc: HTTPException):
+        # Parser/HTTP exception details and custom headers can contain input too.
+        messages = {404: "Not Found", 405: "Method Not Allowed"}
+        methods = {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "CONNECT", "TRACE"}
+        allowed = ", ".join(
+            sorted(
+                {
+                    method.strip()
+                    for key, value in (exc.headers or {}).items()
+                    if key.lower() == "allow"
+                    for method in value.split(",")
+                    if method.strip() in methods
+                }
+            )
+        )
+        headers = {"Allow": allowed} if exc.status_code == 405 and allowed else None
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": messages.get(exc.status_code, "Requisicao HTTP invalida.")},
+            headers=headers,
+        )
 
     @app.get("/health/live")
     def live() -> dict[str, str]:
@@ -198,12 +250,12 @@ def create_app() -> FastAPI:
             503: {"model": ErrorResponse, "description": "Modelo de inferencia indisponivel."},
         },
     )
-    def triage(payload: TriageBatchRequest) -> TriageBatchResponse:
+    def triage(payload: TriageBatchRequest, request: Request) -> TriageBatchResponse:
         predictor = state["predictor"]
         if predictor is None:
             raise ModelLoadError("Modelo de inferencia indisponivel.")
         service = TriageService(predictor)  # type: ignore[arg-type]
-        request_id = payload.request_id or str(uuid4())
+        request_id = payload.request_id or request.state.request_id
         texts = [item.report_text.strip() for item in payload.instances]
         metrics.observe_inputs(len(text) for text in texts)
         started = time.perf_counter()

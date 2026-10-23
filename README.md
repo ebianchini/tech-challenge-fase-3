@@ -5,7 +5,8 @@ documentada, API FastAPI, contrato versionado, carregamento singleton no startup
 abstencao tecnica, container multi-stage e testes do dominio e da API. A Etapa 2 inclui o pipeline
 offline, DVC, DAG Airflow e as configuracoes de CI e CD descritas abaixo. A Etapa 3 adiciona
 instrumentacao da API, exposicao de metricas em `GET /metrics`, servidor Prometheus local com
-coleta, alertas e retencao e dashboard Grafana provisionado por arquivos.
+coleta, alertas e retencao, dashboard Grafana provisionado por arquivos e logs JSON com
+minimizacao de dados e rotacao.
 
 O artefato atual e uma demonstracao tecnica treinada com texto sintetico. O Medical Abstracts TC
 Corpus nao possui, por si so, labels de urgencia clinica. Nenhum resultado atual deve ser interpretado
@@ -20,7 +21,7 @@ uv sync --locked --extra dev --extra airflow --python 3.12
 uv run --no-sync python scripts/create_demo_model.py
 uv run --no-sync python scripts/benchmark_baseline.py
 uv run --no-sync pytest -q tests
-uv run --no-sync uvicorn triage.api.app:app --host 0.0.0.0 --port 8000 --workers 1
+uv run --no-sync uvicorn triage.api.app:app --host 0.0.0.0 --port 8000 --workers 1 --no-access-log --log-config logging/uvicorn.json
 ```
 
 A API fica em `http://localhost:8000`. O contrato completo esta em
@@ -45,7 +46,7 @@ Anotacao clinica proposta: [docs/annotation-protocol.md](docs/annotation-protoco
 
 ```powershell
 docker build --build-arg TRIAGE_MODEL_SOURCE=demo -t triage-laudos:dev .
-docker run --rm -p 127.0.0.1:8000:8000 triage-laudos:dev
+docker run --rm --log-driver json-file --log-opt max-size=10m --log-opt max-file=3 -p 127.0.0.1:8000:8000 triage-laudos:dev
 # PowerShell: executa readiness e uma requisicao sintetica, removendo o container ao final
 ./scripts/docker_smoke.ps1
 ```
@@ -178,6 +179,24 @@ nao sao usados como labels. As consultas a `/metrics` nao alimentam as estatisti
 Use um unico worker por container: o registro de metricas e isolado por instancia da aplicacao e
 esta entrega nao agrega multiplos processos. O endpoint nao possui autenticacao na aplicacao;
 restrinja seu acesso a rede de observabilidade e nao o inclua nas rotas publicas do gateway.
+
+## Logs e privacidade
+
+Cada requisicao gera um evento JSON em stdout com `request_id`, metodo, template da rota,
+status HTTP, latencia e versao do modelo. Payloads, headers, tokens, URLs recebidas e mensagens
+de excecao ficam fora do registro. Erros de validacao usam mensagens fixas e ocultam nomes
+de campos extras. A configuracao versionada do Uvicorn tambem remove mensagens e stack traces
+dos eventos de servidor e desativa o access log com URLs.
+
+`X-Request-ID` usa um UUID canonico, gerado quando o header nao for seguro; o mesmo valor
+aparece no header da resposta e no log, inclusive em erros. O `request_id` opcional no corpo
+continua sendo devolvido pelo contrato, sem ser registrado. Sem ele, corpo, header e log
+usam o mesmo UUID. A versao HTTP `1.0` e os schemas permanecem compativeis.
+
+O Compose aplica rotacao `json-file` de 10 MB x 3 arquivos por container. A politica proposta
+para CloudWatch e de 14 dias, com template e comandos de aplicacao pelo operador; nenhuma
+configuracao AWS e alterada automaticamente. Operacao, testes e limites estao em
+[docs/logging-privacy.md](docs/logging-privacy.md).
 
 Consulte [docs/metrics.md](docs/metrics.md) para unidades, contagem de lotes, labels e limites; veja
 [docs/prometheus-local.md](docs/prometheus-local.md) para coleta, alertas, retencao e verificacao
