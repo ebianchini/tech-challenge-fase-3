@@ -56,6 +56,8 @@ def test_airflow_task_functions_exchange_files_not_datasets(tmp_path) -> None:
     assert gate["passed"] is True
     assert benchmark["iterations"] == 3
     assert onnx["size_bytes"] > 0
+    assert onnx["equivalence"]["passed"] is True
+    assert onnx["equivalence"]["max_probability_delta"] <= 1e-5
     assert registered["artifact_fingerprint"] == trained["artifact_fingerprint"]
     assert json.loads((run_dir / "validation.json").read_text())["valid"] is True
     assert not (run_dir / "texts.json").exists()

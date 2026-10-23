@@ -16,7 +16,7 @@ from triage.domain.exceptions import InferenceError
 from triage.domain.models import TriageClass, TriageRequest
 from triage.domain.service import TriageService
 from triage.infrastructure.metrics import HTTPMetricsMiddleware, TriageMetrics
-from triage.infrastructure.model_loader import ModelLoadError, SklearnPredictor
+from triage.infrastructure.model_loader import ModelLoadError, ONNXPredictor, SklearnPredictor
 
 CONTRACT_VERSION = "1.0"
 MAX_BATCH_SIZE = 32
@@ -25,6 +25,12 @@ MODEL_PATH = Path(os.getenv("TRIAGE_MODEL_PATH", ROOT_DIR / "models" / "model.jo
 PREPROCESSOR_PATH = Path(
     os.getenv("TRIAGE_PREPROCESSOR_PATH", ROOT_DIR / "models" / "preprocessor.joblib")
 )
+ONNX_PATH = Path(os.getenv("TRIAGE_ONNX_PATH", ROOT_DIR / "models" / "triage.onnx"))
+MODEL_METADATA_PATH = Path(
+    os.getenv("TRIAGE_MODEL_METADATA_PATH", ROOT_DIR / "models" / "model_metadata.json")
+)
+INFERENCE_BACKEND = os.getenv("TRIAGE_INFERENCE_BACKEND", "auto").lower()
+ALLOW_SKLEARN_FALLBACK = os.getenv("TRIAGE_ALLOW_SKLEARN_FALLBACK", "true").lower() == "true"
 
 
 class TriageBatchRequest(BaseModel):
@@ -109,7 +115,7 @@ def create_app() -> FastAPI:
         state.update(predictor=None, load_error=None)
         metric_model_version = metrics.begin_model(None)
         try:
-            predictor = SklearnPredictor(MODEL_PATH, PREPROCESSOR_PATH)
+            predictor = _load_predictor()
             state["predictor"] = predictor
         except ModelLoadError as exc:
             state["load_error"] = exc
@@ -224,6 +230,25 @@ def create_app() -> FastAPI:
         return response
 
     return app
+
+
+def _load_predictor():
+    if INFERENCE_BACKEND not in {"auto", "onnx", "sklearn"}:
+        raise ModelLoadError("Backend de inferencia invalido.")
+    production = os.getenv("TRIAGE_ENV", "development") == "production"
+    if INFERENCE_BACKEND == "auto" and production and ONNX_PATH.is_file():
+        return ONNXPredictor(ONNX_PATH, MODEL_METADATA_PATH)
+    if INFERENCE_BACKEND == "onnx" and ONNX_PATH.is_file():
+        return ONNXPredictor(ONNX_PATH, MODEL_METADATA_PATH)
+    if INFERENCE_BACKEND == "onnx" or (INFERENCE_BACKEND == "auto" and production):
+        raise ModelLoadError("Backend ONNX configurado, mas o artefato nao existe.")
+    if INFERENCE_BACKEND == "auto" and os.getenv("TRIAGE_ENV", "development") == "production":
+        raise ModelLoadError("Artefato ONNX obrigatorio em producao.")
+    if INFERENCE_BACKEND == "auto" and not ALLOW_SKLEARN_FALLBACK:
+        raise ModelLoadError("Fallback sklearn desabilitado e artefato ONNX indisponivel.")
+    if INFERENCE_BACKEND == "sklearn" or ALLOW_SKLEARN_FALLBACK:
+        return SklearnPredictor(MODEL_PATH, PREPROCESSOR_PATH)
+    raise ModelLoadError("Nenhum backend de inferencia disponivel.")
 
 
 app = create_app()

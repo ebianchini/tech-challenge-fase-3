@@ -30,6 +30,11 @@ O benchmark sintetico gera `reports/latency_baseline.csv` com p50, p95, p99 e me
 O arquivo `.env.example` lista somente configuracoes locais sem segredos. O ambiente de dependencias
 e fixado por `pyproject.toml` e `uv.lock`.
 
+`create_demo_model.py` tambem gera `models/triage.onnx` e `models/model_metadata.json`.
+Em desenvolvimento, a API usa o sklearn como fallback para manter o fluxo local independente
+do artefato otimizado. Em producao, o Dockerfile define
+`TRIAGE_INFERENCE_BACKEND=onnx` e a readiness falha se o ONNX nao estiver disponivel.
+
 ## Decisoes de arquitetura
 
 A API usa inferencia real-time sincrona; treino e avaliacao serao batch offline. A arquitetura alvo e
