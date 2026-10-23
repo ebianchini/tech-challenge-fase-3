@@ -125,15 +125,15 @@ jobs:
           retention-days: 14
 
   monitoring:
-    name: Prometheus configuration and alerts
+    name: Monitoring and Grafana
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Validate Compose configuration
-        run: docker compose config --quiet
+        run: docker compose --profile airflow config --quiet
       - name: Validate Prometheus configuration and rules
         run: >-
           docker run --rm --entrypoint /bin/promtool
@@ -146,6 +146,24 @@ jobs:
           --mount type=bind,source="${{ github.workspace }}/monitoring/prometheus",target=/etc/prometheus,readonly
           --workdir /etc/prometheus prom/prometheus:v3.13.3
           test rules alerts.test.yml
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.13.4"
+          python-version: "3.12.15"
+          enable-cache: true
+      - run: uv sync --locked --extra dev
+      - name: Build the optional Airflow image with the lockfile
+        run: docker compose --profile airflow build airflow-init
+      - name: Verify isolated Compose startup, metrics and Grafana recreation
+        run: uv run --no-sync python scripts/check_compose.py --timeout 900 --output reports/ci/compose-smoke.json
+      - name: Upload Compose smoke evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: compose-smoke
+          path: reports/ci/compose-smoke.json
+          if-no-files-found: ignore
+          retention-days: 14
 
   required:
     name: CI required

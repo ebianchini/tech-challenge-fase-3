@@ -1,0 +1,21 @@
+# The fixed UID is referenced by the versioned dashboard.
+apiVersion: 1
+
+prune: true
+
+datasources:
+  - name: Prometheus
+    uid: triage-prometheus
+    orgId: 1
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    version: 1
+    jsonData:
+      httpMethod: POST
+      timeInterval: 15s
+      prometheusType: Prometheus
+      prometheusVersion: 3.13.3
+

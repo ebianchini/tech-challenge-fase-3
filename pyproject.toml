@@ -26,6 +26,7 @@ dev = [
 ]
 airflow = [
     "apache-airflow>=2.9,<3.0",
+    "psycopg2-binary==2.9.11",
     "onnx>=1.16,<2.0",
     "onnxconverter-common>=1.14,<2.0",
     "skl2onnx>=1.17,<2.0",
