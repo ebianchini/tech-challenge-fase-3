@@ -48,6 +48,23 @@ tecnico e deve encaminhar o caso para revisao humana.
   `MODEL_UNAVAILABLE`; falha de inferencia usa `INFERENCE_FAILED`.
 - Respostas de erro nao incluem payload, texto, stack trace ou caminho local.
 
+Os detalhes de validacao preservam apenas `loc`, `msg` e `type`: mensagens sao fixas,
+nomes de campos desconhecidos viram `extra`, e valores/contexto da entrada sao omitidos.
+Isso preserva o schema HTTP `1.0`, reduzindo o conteudo devolvido em erros.
+
+## Correlacao e privacidade
+
+`X-Request-ID` aceita um unico UUID canonico (minusculo, com hifens). Headers ausentes,
+duplicados ou fora desse formato recebem um novo UUID. Esse identificador e devolvido no
+header de todas as respostas, inclusive erros, e e o `request_id` dos logs JSON.
+
+O campo opcional `request_id` do corpo preserva o comportamento de eco no corpo da
+resposta, sem ser escrito em logs ou headers. Quando omitido, o corpo usa o mesmo UUID
+do header. Para correlacionar uma requisicao com os logs, use `X-Request-ID` da resposta.
+`X-Response-Time-Ms` mede o tempo ate o inicio da resposta; `latency_ms` no log inclui o
+envio do ultimo bloco do corpo. A configuracao do servidor e os limites de armazenamento
+estao em [logging-privacy.md](logging-privacy.md).
+
 ## Metricas
 
 `GET /metrics` retorna texto no formato Prometheus, com o `Content-Type` fornecido pelo

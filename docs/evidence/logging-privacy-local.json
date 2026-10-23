@@ -1,0 +1,77 @@
+{
+  "date": "2026-10-22",
+  "timezone": "America/Sao_Paulo",
+  "scope": "API local com Uvicorn real e dados exclusivamente sinteticos; configuracoes de retencao validadas offline.",
+  "result": "passed",
+  "checks": [
+    {
+      "case": "server_formatter_exception_and_message",
+      "execution": "native_python",
+      "status": "passed",
+      "result": "Excecao, mensagem, argumentos e traceback omitidos. Registro JSON limitado a timestamp, level e event."
+    },
+    {
+      "case": "server_access_logger",
+      "execution": "native_python",
+      "status": "passed",
+      "result": "NullHandler nao emitiu registro de access log."
+    },
+    {
+      "case": "native_liveness",
+      "execution": "real_uvicorn",
+      "http_status": 200,
+      "status": "passed",
+      "result": "Servidor iniciou com logging/uvicorn.json e --no-access-log."
+    },
+    {
+      "case": "unknown_route_query_and_sensitive_headers",
+      "execution": "real_uvicorn",
+      "http_status": 404,
+      "status": "passed",
+      "result": "Auditoria usou route=unmatched. Marcadores sinteticos de URL, query, Authorization e X-Request-ID ausentes de stdout e stderr."
+    },
+    {
+      "case": "malformed_http_protocol",
+      "execution": "real_uvicorn",
+      "http_status": 400,
+      "status": "passed",
+      "result": "Warning do servidor preservou somente evento JSON seguro, sem os marcadores sinteticos do request malformado."
+    },
+    {
+      "case": "unexpected_exception_after_generic_response",
+      "execution": "real_uvicorn_with_temporary_synthetic_endpoint",
+      "http_status": 500,
+      "status": "passed",
+      "result": "RuntimeError com caminho, payload e token sinteticos gerou INFERENCE_FAILED com mensagem generica e details vazio. Auditoria HTTP 500 e server ERROR emitidos sem marcadores ou Traceback em corpo, stdout e stderr."
+    },
+    {
+      "case": "compose_rotation_configuration",
+      "execution": "offline_yaml_validation",
+      "status": "passed",
+      "services_checked": 7,
+      "driver": "json-file",
+      "max_size": "10m",
+      "max_file": "3",
+      "result": "Todos os servicos herdam a politica; o comando Docker inclui config segura e access log desativado. Rotacao fisica nao executada."
+    },
+    {
+      "case": "cloudwatch_retention_template",
+      "execution": "offline_botocore_input_schema_validation",
+      "operation": "PutRetentionPolicy",
+      "status": "passed",
+      "retention_in_days": 14,
+      "result": "Template parametrizado validado contra schema AWS, sem chamadas remotas."
+    }
+  ],
+  "not_executed": [
+    {
+      "component": "docker_build_and_runtime_rotation",
+      "reason": "Docker nao disponivel no PATH deste ambiente. Validacao limitada a configuracao versionada."
+    },
+    {
+      "component": "aws_cloudwatch_retention_application",
+      "reason": "Verificacao limitada ao schema offline, sem chamadas AWS; aplicar e comprovar retencao e etapa operacional do ambiente configurado."
+    }
+  ],
+  "privacy": "Somente resultados e metadados tecnicos; sem stdout/stderr brutos, payloads ou segredos."
+}
