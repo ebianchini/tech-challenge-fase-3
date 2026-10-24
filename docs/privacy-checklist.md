@@ -28,3 +28,9 @@ e nao devem ser substituidos por texto clinico real em CI ou fixtures.
 - [ ] Aprovacao institucional registrada para o conjunto e o modelo.
 
 Estado atual: prova tecnica com dados sinteticos; nenhum dado hospitalar esta autorizado.
+
+Controles tecnicos de logs implementados: eventos JSON com metadados permitidos,
+correlacao por UUID, respostas de erro sanitizadas, logs Uvicorn sem mensagens/tracebacks
+e rotacao Docker de 10 MB x 3 arquivos. O guia [logging-privacy.md](logging-privacy.md)
+descreve a politica, os testes sinteticos e a configuracao de retencao AWS ainda dependente
+do operador. Esses controles nao substituem as aprovacoes institucionais deste checklist.

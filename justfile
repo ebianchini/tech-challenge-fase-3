@@ -25,7 +25,7 @@ test:
     uv run pytest -q tests
 
 api:
-    uv run uvicorn triage.api.app:app --host 0.0.0.0 --port 8000
+    uv run uvicorn triage.api.app:app --host 0.0.0.0 --port 8000 --workers 1 --no-access-log --log-config logging/uvicorn.json
 
 docker-build:
     docker build -t triage-laudos:dev .

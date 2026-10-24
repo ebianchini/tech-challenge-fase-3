@@ -1,0 +1,4 @@
+{
+  "logGroupName": "/ecs/__ENVIRONMENT__/triage",
+  "retentionInDays": 14
+}

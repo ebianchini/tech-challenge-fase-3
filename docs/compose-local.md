@@ -94,7 +94,9 @@ ou restaure seus metadados explicitamente se precisar desse historico no novo ba
 
 Todos os servicos limitam os logs do driver Docker a tres arquivos de 10 MB por container.
 Essa rotacao nao limita o volume `airflow-logs`; o consumo dos volumes deve ser acompanhado
-se o perfil for usado por periodos prolongados.
+se o perfil for usado por periodos prolongados. A API emite auditoria JSON sem conteudo
+clinico; access logs brutos do Uvicorn ficam desativados. A politica de campos, retencao,
+verificacao e protecao do servidor esta em [logging-privacy.md](logging-privacy.md).
 
 ## Airflow opcional
 

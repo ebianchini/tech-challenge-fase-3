@@ -63,8 +63,10 @@ Prepare os recursos abaixo para cada ambiente antes de habilitar o workflow:
    privados necessarios para ECR, S3 e CloudWatch Logs. Um runner GitHub precisa alcancar
    `APP_BASE_URL`. O workflow usa runner GitHub `ubuntu-24.04`; endpoints privados exigem
    adaptar `runs-on` para um runner com acesso a essa rede antes de executar o CD.
-4. Grupo CloudWatch Logs `/ecs/<ambiente>/triage`, retencao definida e politicas IAM descritas
-   abaixo. A execution role nao cria grupos de logs.
+4. Grupo CloudWatch Logs `/ecs/<ambiente>/triage`, retencao de **14 dias** aplicada com
+   [cloudwatch-retention-policy.json](../infra/aws/cloudwatch-retention-policy.json) e
+   politicas IAM descritas abaixo. A execution role nao cria grupos nem altera retencao.
+   O procedimento e a verificacao estao no [guia de logs e privacidade](logging-privacy.md).
 5. Provedor OIDC IAM `https://token.actions.githubusercontent.com`, audience
    `sts.amazonaws.com`, e role assumida exclusivamente pelo GitHub Environment do ambiente.
 
