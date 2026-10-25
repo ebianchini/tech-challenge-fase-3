@@ -1,0 +1,5 @@
+backend,scenario,batch_size,iterations,warmup_ms,cold_start_ms,p50_ms,p95_ms,p99_ms,peak_rss_mb,peak_allocated_mb,artifact_size_bytes,p95_speedup_vs_sklearn,p95_variation_percent_vs_sklearn,rss_delta_mb_vs_sklearn
+sklearn,single,1,100,17.2413,3.7968,2.5986,3.7678,3.9228,142.9844,0.019,3760,1.0,0.0,0.0
+sklearn,batch,3,100,16.1552,2.9855,2.2876,3.7592,4.1141,143.3789,0.012,3760,1.0,0.0,0.0
+onnx,single,1,100,1.3658,3.765,0.1384,0.2656,0.3971,143.3828,0.0097,3108,14.186,-92.9508,0.3984
+onnx,batch,3,100,1.743,5.6692,0.1776,0.396,0.9149,143.4023,0.0067,3108,9.4929,-89.4658,0.0234

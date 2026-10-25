@@ -21,7 +21,7 @@ x-airflow-common: &airflow-common
     AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-airflow-local-demo-web-secret}
     PYTHONPATH: /opt/airflow:/opt/airflow/src
     TRIAGE_PROJECT_ROOT: /opt/airflow
-    TRIAGE_DATA_PATH: /opt/airflow/data/raw/medical_abstracts.csv
+    TRIAGE_DATA_PATH: /opt/airflow/data/raw/medical_tc_train.csv
     TRIAGE_RUN_ROOT: /opt/airflow/artifacts/retraining
     TRIAGE_REGISTRY_ROOT: /opt/airflow/models/registry
     TRIAGE_PARAMS_PATH: /opt/airflow/params.yaml

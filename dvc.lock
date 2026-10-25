@@ -1,0 +1,80 @@
+schema: '2.0'
+stages:
+  normalize:
+    cmd: uv run python -m triage.training.prepare --data 
+      data/raw/medical_tc_train.csv --output 
+      data/interim/medical_tc_train_normalized.csv
+    deps:
+    - path: data/raw/medical_tc_train.csv
+      hash: md5
+      md5: 792daf8b6ca8557f88ba68f7cec22b03
+      size: 14254503
+    - path: src/triage/training/dataset.py
+      hash: md5
+      md5: f5f04f73be4ada5502e08d1c3504020c
+      size: 5999
+    - path: src/triage/training/prepare.py
+      hash: md5
+      md5: 4c385b4d41a3b9cd56ce9d57ef05c308
+      size: 501
+    outs:
+    - path: data/interim/medical_tc_train_normalized.csv
+      hash: md5
+      md5: 343a3ea43798e66ca588162391d249d8
+      size: 14242940
+  train:
+    cmd: uv run train --data data/interim/medical_tc_train_normalized.csv 
+      --output-dir models/training --params-file params.yaml
+    deps:
+    - path: data/interim/medical_tc_train_normalized.csv
+      hash: md5
+      md5: 343a3ea43798e66ca588162391d249d8
+      size: 14242940
+    - path: src/triage/training/dataset.py
+      hash: md5
+      md5: f5f04f73be4ada5502e08d1c3504020c
+      size: 5999
+    - path: src/triage/training/evaluation.py
+      hash: md5
+      md5: 2a885691da4b23b8cd1422dca49220a7
+      size: 2411
+    - path: src/triage/training/pipeline.py
+      hash: md5
+      md5: 9f146adfac984701402eddc9e4a53097
+      size: 3396
+    - path: src/triage/training/train.py
+      hash: md5
+      md5: df6ac6ea0a5881e7ee08aed4f2897d6d
+      size: 6468
+    params:
+      params.yaml:
+        train:
+          random_state: 42
+          test_size: 0.2
+          temporal_split: false
+          min_df: 1
+          max_features:
+          max_iter: 1000
+          min_macro_f1: 0.6
+          min_urgent_recall: 0.9
+    outs:
+    - path: models/training/metadata.json
+      hash: md5
+      md5: ca1f76da1b70beb94bb46c1bfb522487
+      size: 2347
+    - path: models/training/model.joblib
+      hash: md5
+      md5: ae29ebe33bb4d98dc2603e754749e56a
+      size: 19782175
+    - path: models/training/pipeline.joblib
+      hash: md5
+      md5: c779fe40cf7ed23835ec6597b2975752
+      size: 34374068
+    - path: models/training/preprocessor.joblib
+      hash: md5
+      md5: 2caf54c8e71aecb373401f7fcf3621ae
+      size: 14592034
+    - path: models/training/split.json
+      hash: md5
+      md5: ac3f352202126ef3e695d9ff499e8055
+      size: 127640

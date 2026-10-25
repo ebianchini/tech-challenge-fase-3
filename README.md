@@ -1,5 +1,24 @@
 # Sistema de Triagem Automatica de Laudos
 
+<p align="center">
+  <img alt="Python" src="https://img.shields.io/badge/Python-3.11--3.13-3776AB?logo=python&logoColor=white" />
+  <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white" />
+  <img alt="scikit-learn" src="https://img.shields.io/badge/scikit--learn-1.5--1.6-F7931E?logo=scikit-learn&logoColor=white" />
+  <img alt="ONNX Runtime" src="https://img.shields.io/badge/ONNX%20Runtime-1.18%2B-005CED?logo=onnx&logoColor=white" />
+  <img alt="DVC" src="https://img.shields.io/badge/DVC-3.x-13ADC7?logo=dvc&logoColor=white" />
+  <img alt="Airflow" src="https://img.shields.io/badge/Airflow-2.9%2B-017CEE?logo=apache-airflow&logoColor=white" />
+  <img alt="Ruff" src="https://img.shields.io/badge/Ruff-0.6%2B-D7FF64?logo=ruff&logoColor=black" />
+</p>
+
+<p align="center">
+  <a href="https://github.com/ebianchini/tech-challenge-fase-3/actions/workflows/ci.yml">
+    <img alt="CI" src="https://github.com/ebianchini/tech-challenge-fase-3/actions/workflows/ci.yml/badge.svg" />
+  </a>
+  <img alt="Docker" src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" />
+  <img alt="Prometheus" src="https://img.shields.io/badge/Prometheus-2.x-E6522C?logo=prometheus&logoColor=white" />
+  <img alt="Grafana" src="https://img.shields.io/badge/Grafana-11.x-F46800?logo=grafana&logoColor=white" />
+</p>
+
 Projeto iniciado conforme o SDD de apoio. Esta entrega cobre a fundacao das Etapas 0 e 1: governanca
 documentada, API FastAPI, contrato versionado, carregamento singleton no startup, health checks,
 abstencao tecnica, container multi-stage e testes do dominio e da API. A Etapa 2 inclui o pipeline
@@ -8,9 +27,10 @@ instrumentacao da API, exposicao de metricas em `GET /metrics`, servidor Prometh
 coleta, alertas e retencao, dashboard Grafana provisionado por arquivos e logs JSON com
 minimizacao de dados e rotacao.
 
-O artefato atual e uma demonstracao tecnica treinada com texto sintetico. O Medical Abstracts TC
-Corpus nao possui, por si so, labels de urgencia clinica. Nenhum resultado atual deve ser interpretado
-como evidencia de seguranca ou desempenho clinico.
+O artefato de inferencia da API continua sendo uma demonstracao tecnica treinada com texto
+sintetico. O corpus fornecido em `data/raw/medical_tc_train.csv` e o Medical Abstracts TC
+Corpus, cujas classes sao tematicas (`condition_label`) e nao representam urgencia clinica.
+Nenhum resultado atual deve ser interpretado como evidencia de seguranca ou desempenho clinico.
 
 ## Execucao local
 
@@ -20,13 +40,16 @@ Requer Python 3.11-3.13 e `uv`.
 uv sync --locked --extra dev --extra airflow --python 3.12
 uv run --no-sync python scripts/create_demo_model.py
 uv run --no-sync python scripts/benchmark_baseline.py
+uv run --no-sync python scripts/benchmark_comparison.py
 uv run --no-sync pytest -q tests
 uv run --no-sync uvicorn triage.api.app:app --host 0.0.0.0 --port 8000 --workers 1 --no-access-log --log-config logging/uvicorn.json
 ```
 
 A API fica em `http://localhost:8000`. O contrato completo esta em
 `docs/inference-contract.md`. Nenhum texto de entrada e escrito em logs ou metricas por esta etapa.
-O benchmark sintetico gera `reports/latency_baseline.csv` com p50, p95, p99 e memoria de pico.
+Os benchmarks geram `reports/latency_baseline.csv` e
+`reports/latency_comparison.csv`. O comparativo mede cold start, inferencia individual e em
+lote, p50/p95/p99, memoria residente/alocada e equivalencia de classes/probabilidades.
 
 O arquivo `.env.example` lista somente configuracoes locais sem segredos. O ambiente de dependencias
 e fixado por `pyproject.toml` e `uv.lock`.
@@ -38,14 +61,66 @@ do artefato otimizado. Em producao, o Dockerfile define
 
 ## Decisoes de arquitetura
 
-A API usa inferencia real-time sincrona; treino e avaliacao serao batch offline. A arquitetura alvo e
-AWS com ECR, ECS/Fargate, ALB, S3 e observabilidade gerenciada quando aplicavel. O Compose local e
-somente desenvolvimento. TLS, identidade de servico, rate limiting e autorizacao devem ser aplicados
-no gateway antes de qualquer deploy; a API valida limites de 10.000 caracteres e 32 instancias.
+A solução foi organizada separando o caminho de inferência do caminho de treinamento. A API
+FastAPI atende as requisições de forma síncrona e utiliza um modelo carregado no startup,
+evitando recarregamentos a cada chamada. Para reduzir a latência, o backend de produção prioriza
+o ONNX Runtime, enquanto o sklearn continua disponível como fallback para desenvolvimento e
+comparação dos resultados.
+
+O treinamento acontece de forma offline, sendo executado pelo pipeline versionado com DVC e
+orquestrado pelo Airflow. Esse fluxo realiza a preparação dos dados, o treinamento, a avaliação,
+a exportação para ONNX e o benchmark de latência. A promoção do modelo depende do quality gate e
+do fingerprint dos artefatos, permitindo identificar exatamente qual versão foi utilizada.
+
+Para a execução em produção, foi considerada uma arquitetura com Docker, ECR, ECS/Fargate e
+ALB. O acesso externo deve passar por uma camada de gateway responsável por TLS, autenticação,
+controle de tráfego e rate limiting. A aplicação permanece stateless, e as imagens devem ser
+referenciadas por digest em vez de `latest`, facilitando auditoria e rollback.
+
+A observabilidade foi separada da aplicação principal. A API expõe métricas no formato Prometheus,
+o Grafana apresenta os principais indicadores operacionais e os logs são emitidos em JSON com
+minimização de dados. Textos de entrada, tokens, headers e mensagens de exceção não são
+registrados. O Compose local reproduz somente a parte necessária para desenvolvimento e testes,
+não substituindo os controles de segurança e infraestrutura previstos para AWS.
+
+Como o dataset disponibilizado possui classes temáticas e não rótulos de urgência, o modelo atual
+é tratado como uma demonstração técnica. A promoção para uso clínico permanece bloqueada até que
+exista um dataset aprovado, com `urgency_label`, validação por especialistas, avaliação clínica,
+aprovações institucionais e controles formais de privacidade.
 
 Detalhes operacionais: [docs/architecture.md](docs/architecture.md). Governanca: [docs/governance.md](docs/governance.md).
 Anotacao clinica proposta: [docs/annotation-protocol.md](docs/annotation-protocol.md). Privacidade:
 [docs/privacy-checklist.md](docs/privacy-checklist.md).
+
+## Arquitetura
+
+```mermaid
+flowchart LR
+    Client[HIS/EMR ou cliente autorizado] --> Gateway[ALB/API Gateway<br/>TLS, identidade e rate limit]
+    Gateway --> API[FastAPI stateless<br/>POST /v1/triage]
+    API --> Model[ONNX Runtime<br/>warm-up no startup]
+    API --> Metrics[Prometheus metrics]
+    Metrics --> Grafana[Grafana provisionado]
+    API --> Audit[Logs JSON minimizados<br/>sem texto bruto]
+
+    DVC[DVC/S3 remote] --> Airflow[Airflow DAG]
+    Airflow --> Normalize[Normalizacao e validacao]
+    Normalize --> Train[TF-IDF + Logistic Regression]
+    Train --> Evaluate[Quality gate]
+    Evaluate --> Export[Exportacao ONNX + benchmark]
+    Export --> Registry[Registry imutavel por fingerprint]
+    Registry --> Image[Imagem Docker por digest]
+    Image --> API
+
+    CI[GitHub Actions CI/CD] --> Image
+    CI --> Scan[Scan de vulnerabilidades]
+    Scan --> Image
+```
+
+O diagrama representa a arquitetura alvo e os limites desta entrega: o Compose local substitui
+ALB, AWS, S3 e observabilidade gerenciada somente para desenvolvimento. O corpus Medical
+Abstracts TC permanece técnico e temático; promoção clínica exige `urgency_label`, quality gate
+aprovado e aprovações institucionais.
 
 ## Docker
 
@@ -100,7 +175,7 @@ O pipeline offline esta em [`src/triage/training/`](src/triage/training). O adap
 converte classes temáticas em urgência. O treino técnico é executado com:
 
 ```powershell
-uv run train --data data/raw/medical_abstracts.csv --output-dir models/training
+uv run train --data data/interim/medical_tc_train_normalized.csv --output-dir models/training
 ```
 
 O modelo é `TfidfVectorizer -> LogisticRegression`, com o vocabulário ajustado somente no
@@ -109,20 +184,30 @@ fingerprint, parâmetros, métricas por classe, matriz de confusão e erro de ca
 `--clinical` exige uma coluna `urgency_label` e `--clinical-approval`; sem ambos o treino
 clínico falha explicitamente.
 
+O treino reproduzido pelo DVC sobre o corpus técnico gera cinco classes temáticas e, portanto,
+não pode passar o gate de `recall_urgente` nem ser registrado como modelo clínico. O gate
+reprovado nesse caso é intencional e impede promoção indevida.
+
 O fluxo DVC em [`dvc.yaml`](dvc.yaml) normaliza o CSV e treina usando [`params.yaml`](params.yaml):
 
 ```powershell
 $env:DVC_REMOTE_URL = "s3://bucket-privado/triage-dvc"
-dvc remote add --local -d default $env:DVC_REMOTE_URL
-dvc repro
-dvc pull
-dvc push
+uv run dvc remote add --local -d default $env:DVC_REMOTE_URL
+uv run dvc repro
+uv run dvc pull
+uv run dvc push
 ```
 
 Configure permissões por identidade (por exemplo, OIDC/role na CI ou perfil local), nunca
 credenciais no repositório. O arquivo [`.dvc/config.example`](.dvc/config.example) mostra o
 formato; o remote efetivo deve ser gravado somente na configuração local (`--local`). O corpus
-precisa ser fornecido por `dvc pull` ou colocado em `data/raw/medical_abstracts.csv`.
+precisa ser fornecido por `dvc pull` ou colocado em `data/raw/`. Os arquivos
+`medical_tc_train.csv`, `medical_tc_test.csv` e `medical_tc_labels.csv` são rastreados por DVC.
+O estágio reprodutível usa o conjunto de treino técnico; o conjunto de teste permanece disponível
+para avaliação externa e não é convertido em label de urgência.
+
+Após a reprodução, `uv run dvc status --json` deve retornar `{}` e [dvc.lock](dvc.lock) deve
+permanecer consistente com os arquivos de dados e os parâmetros.
 
 ## Airflow
 
@@ -209,8 +294,34 @@ do servidor local. Os alertas ficam na UI/API do Prometheus, sem envio de notifi
 O dashboard Grafana inclui requisicoes, latencia, erros de triagem e HTTP 5xx, predicoes, abstencao e readiness;
 veja [docs/grafana-local.md](docs/grafana-local.md) para consultas e verificacao do provisionamento.
 
+## Validacao desta entrega
+
+As verificacoes executadas com os arquivos disponibilizados em `data/raw/` foram:
+
+- `uv run dvc repro`: aprovado; gerou [dvc.lock](dvc.lock) e `uv run dvc status --json` retornou `{}`.
+- Fluxo das tasks de dados, treino, avaliacao, exportacao ONNX e benchmark: executado com
+  `medical_tc_train.csv`; o registro foi bloqueado pelo quality gate, como esperado para classes
+  tematicas sem `urgency_label`.
+- Comparativo sklearn/ONNX: [reports/latency_comparison.csv](reports/latency_comparison.csv) e
+  [reports/latency_comparison.json](reports/latency_comparison.json); delta maximo de
+  probabilidade `4e-8`, classes equivalentes, tamanho de artefato e gate de speedup aprovados.
+  O benchmark mede single/batch, cold start, p50, p95, p99, RSS residente e alocacao Python.
+
+Resumo do benchmark local atual:
+
+| Cenário | sklearn p95 | ONNX p95 | Speedup ONNX | Tamanho sklearn | Tamanho ONNX |
+|---|---:|---:|---:|---:|---:|
+| Instância única | 2,6771 ms | 0,1853 ms | 14,45x | 3.760 B | 3.108 B |
+| Lote de 3 | 2,8221 ms | 0,3421 ms | 8,25x | 3.760 B | 3.108 B |
+- `uv run pytest -q tests`: 284 testes aprovados.
+- Ruff, validacao OpenAPI, carregamento da DAG e smoke Docker Compose: aprovados localmente.
+
+Essas evidencias comprovam a cadeia tecnica local, mas nao substituem uma execucao Linux do
+workflow no GitHub Actions, um deploy AWS real ou validacao clinica.
+
 ## Proximos bloqueios
 
 Antes de qualquer uso hospitalar, ainda sao necessarios governanca clinica, dataset rotulado por
-especialistas, desidentificacao aprovada, protecao de branch com CI obrigatoria, configuracao e
-validacao do deploy AWS, verificacao das alteracoes atuais da stack em Docker e comparacao de inferencia ONNX.
+especialistas, desidentificacao aprovada, protecao de branch com CI obrigatoria, checklist de
+seguranca aprovado, configuracao e validacao do deploy AWS e uma execucao Linux do workflow
+atualizado no GitHub Actions. O corpus técnico continua bloqueado para promoção clínica.

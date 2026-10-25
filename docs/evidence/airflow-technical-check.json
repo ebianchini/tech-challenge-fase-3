@@ -1,0 +1,20 @@
+{
+  "status": "passed",
+  "dag_id": "triage_retrain",
+  "task_count": 8,
+  "task_order": [
+    "load_data",
+    "validate_data",
+    "prepare_splits",
+    "train_model",
+    "evaluate_model",
+    "export_onnx",
+    "benchmark_latency",
+    "register_if_approved"
+  ],
+  "dataset": "medical_tc_train.csv",
+  "label_semantics": "technical-demo",
+  "clinical_registration": "blocked_without_urgency_label_and_approval",
+  "xcom_dataset_transfer": false,
+  "note": "Task flow and DAG loading were validated locally; scheduler execution in GitHub Actions is not claimed."
+}

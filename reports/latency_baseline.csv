@@ -1,0 +1,2 @@
+model_version,samples,p50_ms,p95_ms,p99_ms,peak_memory_mb
+model,100,2.211,3.94,5.15,0.015

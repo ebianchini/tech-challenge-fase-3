@@ -19,7 +19,7 @@ from triage.training.airflow_tasks import (
 )
 
 ROOT_DIR = Path(os.getenv("TRIAGE_PROJECT_ROOT", Path(__file__).resolve().parents[1]))
-DATA_PATH = Path(os.getenv("TRIAGE_DATA_PATH", ROOT_DIR / "data/raw/medical_abstracts.csv"))
+DATA_PATH = Path(os.getenv("TRIAGE_DATA_PATH", ROOT_DIR / "data/raw/medical_tc_train.csv"))
 RUN_ROOT = Path(os.getenv("TRIAGE_RUN_ROOT", ROOT_DIR / "artifacts/retraining"))
 REGISTRY_ROOT = Path(os.getenv("TRIAGE_REGISTRY_ROOT", ROOT_DIR / "models/registry"))
 PARAMS_PATH = Path(os.getenv("TRIAGE_PARAMS_PATH", ROOT_DIR / "params.yaml"))

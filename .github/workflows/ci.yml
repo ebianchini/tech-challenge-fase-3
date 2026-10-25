@@ -55,6 +55,8 @@ jobs:
       - run: uv sync --locked --extra dev --extra airflow
       - name: Create synthetic demo model
         run: uv run --no-sync python scripts/create_demo_model.py
+      - name: Benchmark sklearn versus ONNX
+        run: uv run --no-sync python scripts/benchmark_comparison.py
       - name: Run tests with coverage
         run: >-
           uv run --no-sync pytest -q tests
@@ -71,6 +73,8 @@ jobs:
             reports/ci/coverage.xml
             reports/ci/coverage-html/
             reports/ci/junit.xml
+            reports/latency_comparison.csv
+            reports/latency_comparison.json
           if-no-files-found: error
           retention-days: 14
 
