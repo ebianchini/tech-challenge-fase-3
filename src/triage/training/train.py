@@ -147,7 +147,7 @@ def _read_params(path: str | Path) -> dict[str, Any]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Treina o pipeline de texto da triagem.")
-    parser.add_argument("--data", default="data/raw/medical_abstracts.csv")
+    parser.add_argument("--data", default="data/interim/medical_tc_train_normalized.csv")
     parser.add_argument("--output-dir", default="models/training")
     parser.add_argument("--test-size", type=float, default=0.2)
     parser.add_argument("--random-state", type=int, default=42)

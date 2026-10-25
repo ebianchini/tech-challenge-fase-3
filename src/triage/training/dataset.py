@@ -31,8 +31,15 @@ class TextDataset:
         return tuple(sorted(set(self.labels)))
 
 
-TEXT_ALIASES = ("text", "report_text", "abstract", "description", "content")
-LABEL_ALIASES = ("label_original", "label", "category", "target")
+TEXT_ALIASES = (
+    "text",
+    "report_text",
+    "abstract",
+    "medical_abstract",
+    "description",
+    "content",
+)
+LABEL_ALIASES = ("label_original", "label", "category", "target", "condition_label")
 TIMESTAMP_ALIASES = ("timestamp", "created_at", "date", "published_at")
 
 

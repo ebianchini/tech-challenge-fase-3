@@ -1,0 +1,29 @@
+{
+  "status": "repository_checks_passed_external_execution_pending",
+  "ci": {
+    "workflow": ".github/workflows/ci.yml",
+    "triggers": ["push main", "pull_request main", "workflow_dispatch"],
+    "required_gate": "CI required",
+    "checks_declared": [
+      "ruff",
+      "pytest_coverage",
+      "airflow_dag",
+      "openapi",
+      "prometheus_grafana_compose",
+      "sklearn_onnx_benchmark"
+    ],
+    "artifact_paths": [
+      "reports/latency_comparison.csv",
+      "reports/latency_comparison.json"
+    ]
+  },
+  "cd": {
+    "workflow": ".github/workflows/cd.yml",
+    "immutable_image": true,
+    "oidc": true,
+    "health_check": true,
+    "rollback_by_digest": true,
+    "aws_execution": "pending_external_account_configuration"
+  },
+  "branch_protection": "pending_repository_administration"
+}

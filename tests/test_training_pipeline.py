@@ -36,6 +36,27 @@ def test_loader_normalizes_text_and_keeps_original_label(tmp_path) -> None:
     assert len(dataset.fingerprint) == 64
 
 
+def test_loader_accepts_medical_abstracts_corpus_columns(tmp_path) -> None:
+    source = tmp_path / "medical_tc.csv"
+    with source.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(["condition_label", "medical_abstract"])
+        writer.writerows(
+            [
+                ("1", "first abstract"),
+                ("1", "second abstract"),
+                ("2", "third abstract"),
+                ("2", "fourth abstract"),
+            ]
+        )
+
+    dataset = load_csv(source)
+
+    assert dataset.label_column == "condition_label"
+    assert dataset.texts[0] == "first abstract"
+    assert dataset.classes == ("1", "2")
+
+
 def test_clinical_training_requires_approved_urgency_labels(tmp_path) -> None:
     source = tmp_path / "abstracts.csv"
     _write_dataset(source)

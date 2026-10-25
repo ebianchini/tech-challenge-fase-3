@@ -12,11 +12,14 @@ model:
 benchmark:
     uv run python scripts/benchmark_baseline.py
 
+benchmark-comparison:
+    uv run python scripts/benchmark_comparison.py
+
 train:
-    uv run train --data data/raw/medical_abstracts.csv --output-dir models/training
+    uv run train --data data/interim/medical_tc_train_normalized.csv --output-dir models/training
 
 dvc-repro:
-    dvc repro
+    uv run dvc repro
 
 lint:
     uv run ruff check src tests scripts

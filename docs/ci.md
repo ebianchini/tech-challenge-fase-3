@@ -12,7 +12,7 @@ do repositorio.
 | Job | Verificacao |
 | --- | --- |
 | `lint` | Ruff sobre `src`, `tests`, `scripts` e `dags`. |
-| `tests` | Geracao do modelo sintetico e Pytest com cobertura e relatorio JUnit; inclui os testes de Airflow com as dependencias reais instaladas. |
+| `tests` | Geracao do modelo sintetico, benchmark sklearn/ONNX, Pytest com cobertura e relatorio JUnit; inclui os testes de Airflow com as dependencias reais instaladas. |
 | `dag` | Compilacao dos arquivos Python, importacao pelo `DagBag` real do Airflow e verificacao da estrutura de `triage_retrain`, sem executar tasks. |
 | `openapi` | Validacao formal da especificacao e comparacao dos contratos existentes com o baseline [openapi-contract.json](openapi-contract.json). |
 | `monitoring` | Validacao do Compose completo e regras com `promtool` 3.13.3, build da imagem opcional Airflow com lockfile e `check_compose.py` para API/Prometheus/Grafana 13.2.4, incluindo scrape, dashboard, consultas e recriacao do Grafana com persistencia. |
@@ -103,7 +103,7 @@ Os uploads usam somente os caminhos abaixo, com retencao de 14 dias:
 
 | Job | Caminhos permitidos | Conteudo |
 | --- | --- | --- |
-| `tests` | `reports/ci/coverage.xml`, `reports/ci/coverage-html/`, `reports/ci/junit.xml` | Cobertura do codigo e resultados dos testes com fixtures sinteticas. |
+| `tests` | `reports/ci/coverage.xml`, `reports/ci/coverage-html/`, `reports/ci/junit.xml`, `reports/latency_comparison.csv`, `reports/latency_comparison.json` | Cobertura, resultados dos testes e benchmark com fixtures sinteticas. |
 | `dag` | `reports/ci/dag-validation.json` | Identificador da DAG, estrutura das tasks e resultado das validacoes. |
 | `openapi` | `reports/ci/openapi.json` | Especificacao HTTP gerada, sem exemplos de dados reais. |
 | `monitoring` | `reports/ci/compose-smoke.json` | Resultado tecnico dos servicos, scrape, provisionamento, consultas e recriacao, sem credenciais ou textos de entrada. |

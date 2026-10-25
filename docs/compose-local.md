@@ -114,7 +114,8 @@ O init aplica migracoes e cria o usuario apenas quando necessario. Falhas encerr
 inicializacao e bloqueiam scheduler/webserver, sem ocultar erros com `|| true`.
 
 A DAG e criada pausada, sem agendamento automatico. Para executar retreino, forneca o CSV
-esperado em `data/raw/medical_abstracts.csv` e use as configuracoes do pipeline. O perfil nao
+tecnico `data/raw/medical_tc_train.csv` (ou um dataset institucional aprovado com
+`urgency_label`) e use as configuracoes do pipeline. O perfil nao
 baixa datasets nem concede `TRIAGE_CLINICAL_APPROVAL` automaticamente. `dags/`, `src/`,
 `params.yaml` e `data/` sao montados somente para leitura; outputs ficam nos volumes dedicados.
 O acesso ao treinamento nao altera o modelo que a API ja serve.

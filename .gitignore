@@ -35,6 +35,9 @@ dist/
 .ruff_cache/
 reports/ci/
 reports/cd/
+!reports/latency_baseline.csv
+!reports/latency_comparison.csv
+!reports/latency_comparison.json
 .release-source/
 .airflow-ci/
 

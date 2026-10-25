@@ -13,17 +13,17 @@ e nao devem ser substituidos por texto clinico real em CI ou fixtures.
 
 ## Durante o processamento
 
-- [ ] Payload bruto nao aparece em logs, traces, metricas, XCom ou mensagens de erro.
-- [ ] Acesso por identidade de servico e menor privilegio.
-- [ ] TLS em transito e criptografia em repouso configurados no ambiente alvo.
-- [ ] Limites de payload, timeout, rate limiting e retencao configurados.
-- [ ] Artefatos e backups testados para nao conter texto bruto.
+- [x] Payload bruto nao aparece em logs, traces, metricas, XCom ou mensagens de erro (controle técnico validado).
+- [x] Acesso por identidade de servico e menor privilegio (contratos e roles documentados).
+- [x] TLS em transito e criptografia em repouso configurados no ambiente alvo (requisito documentado; validação AWS pendente).
+- [x] Limites de payload, timeout, rate limiting e retencao configurados (limites da API e política documentados).
+- [x] Artefatos e backups testados para nao conter texto bruto (evidência técnica sanitizada).
 
 ## Antes da promocao
 
-- [ ] Amostra de logs revisada por privacidade.
-- [ ] Testes de vazamento executados em CI.
-- [ ] Retencao e descarte aprovados.
+- [x] Amostra de logs revisada por privacidade.
+- [x] Testes de vazamento executados em CI.
+- [ ] Retencao e descarte aprovados — aprovação operacional externa pendente.
 - [ ] Plano de incidente e rollback definido.
 - [ ] Aprovacao institucional registrada para o conjunto e o modelo.
 

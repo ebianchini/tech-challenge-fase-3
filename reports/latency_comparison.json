@@ -1,0 +1,85 @@
+{
+  "equivalence": {
+    "class_match": true,
+    "max_probability_delta": 4.3952260164736856e-08,
+    "probability_tolerance": 1e-05
+  },
+  "quality_gate": {
+    "passed": true,
+    "requirements": [
+      "classes equivalentes",
+      "delta de probabilidade <= 1e-5",
+      "p95 ONNX melhor que sklearn em single e batch"
+    ]
+  },
+  "rows": [
+    {
+      "backend": "sklearn",
+      "scenario": "single",
+      "batch_size": 1,
+      "iterations": 100,
+      "warmup_ms": 17.2413,
+      "p50_ms": 2.5986,
+      "p95_ms": 3.7678,
+      "p99_ms": 3.9228,
+      "peak_rss_mb": 142.9844,
+      "peak_allocated_mb": 0.019,
+      "cold_start_ms": 3.7968,
+      "artifact_size_bytes": 3760,
+      "p95_speedup_vs_sklearn": 1.0,
+      "p95_variation_percent_vs_sklearn": 0.0,
+      "rss_delta_mb_vs_sklearn": 0.0
+    },
+    {
+      "backend": "sklearn",
+      "scenario": "batch",
+      "batch_size": 3,
+      "iterations": 100,
+      "warmup_ms": 16.1552,
+      "p50_ms": 2.2876,
+      "p95_ms": 3.7592,
+      "p99_ms": 4.1141,
+      "peak_rss_mb": 143.3789,
+      "peak_allocated_mb": 0.012,
+      "cold_start_ms": 2.9855,
+      "artifact_size_bytes": 3760,
+      "p95_speedup_vs_sklearn": 1.0,
+      "p95_variation_percent_vs_sklearn": 0.0,
+      "rss_delta_mb_vs_sklearn": 0.0
+    },
+    {
+      "backend": "onnx",
+      "scenario": "single",
+      "batch_size": 1,
+      "iterations": 100,
+      "warmup_ms": 1.3658,
+      "p50_ms": 0.1384,
+      "p95_ms": 0.2656,
+      "p99_ms": 0.3971,
+      "peak_rss_mb": 143.3828,
+      "peak_allocated_mb": 0.0097,
+      "cold_start_ms": 3.765,
+      "artifact_size_bytes": 3108,
+      "p95_speedup_vs_sklearn": 14.186,
+      "p95_variation_percent_vs_sklearn": -92.9508,
+      "rss_delta_mb_vs_sklearn": 0.3984
+    },
+    {
+      "backend": "onnx",
+      "scenario": "batch",
+      "batch_size": 3,
+      "iterations": 100,
+      "warmup_ms": 1.743,
+      "p50_ms": 0.1776,
+      "p95_ms": 0.396,
+      "p99_ms": 0.9149,
+      "peak_rss_mb": 143.4023,
+      "peak_allocated_mb": 0.0067,
+      "cold_start_ms": 5.6692,
+      "artifact_size_bytes": 3108,
+      "p95_speedup_vs_sklearn": 9.4929,
+      "p95_variation_percent_vs_sklearn": -89.4658,
+      "rss_delta_mb_vs_sklearn": 0.0234
+    }
+  ]
+}

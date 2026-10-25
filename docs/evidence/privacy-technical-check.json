@@ -1,0 +1,19 @@
+{
+  "status": "technical_controls_passed",
+  "scope": "synthetic_examples_and_public_technical_corpus",
+  "raw_clinical_data_authorized": false,
+  "checks": {
+    "payload_redaction": "passed",
+    "metric_labels_bounded": "passed",
+    "xcom_dataset_transfer": "passed",
+    "error_response_sanitization": "passed",
+    "compose_log_rotation": "passed",
+    "tests_logging_privacy": "passed"
+  },
+  "organizational_approvals": {
+    "privacy_owner": "pending",
+    "clinical_owner": "pending",
+    "institutional_approval": "pending"
+  },
+  "note": "Technical controls do not authorize hospital use or clinical promotion."
+}
